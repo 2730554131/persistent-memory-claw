@@ -1,0 +1,20 @@
+{
+  "triggerThreshold": 0.7,
+  "maxAutoLoad": 5120,
+  "enableVectorSearch": true,
+  "compressionLevel": 6,
+  "compressionEnabled": false,
+  "snapshotInterval": 5,
+  "storageStrategy": "by-type",
+  "storageMode": "incremental",
+  "enableSharding": false,
+  "shardBy": "date",
+  "maxSnapshotVersions": 5,
+  "enableIncrementalSnapshot": false,
+  "confidenceDecayEnabled": true,
+  "confidenceHalfLifeDays": 30,
+  "enableAutoBackup": true,
+  "backupRetentionDays": 90,
+  "backupIntervalHours": 24,
+  "backupPath": "/root/.nvm/versions/node/v24.14.0/lib/node_modules/openclaw/skills/persistent-memory/scripts/memorys/backup"
+}

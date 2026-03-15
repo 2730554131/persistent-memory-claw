@@ -1,0 +1,11 @@
+{
+  "version": 1773580682446,
+  "state": {
+    "test": "snapshot"
+  },
+  "timestamp": 1773580682446,
+  "stepCount": 0,
+  "checksum": "99c75a067296850d34a05d90b1b62fb19641e218d21eaad0aa1b1531e70d6d48",
+  "workspace": "/root/.nvm/versions/node/v24.14.0/lib/node_modules/openclaw/skills/persistent-memory/scripts",
+  "agentName": "test-agent"
+}

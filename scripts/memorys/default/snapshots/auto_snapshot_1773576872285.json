@@ -1,0 +1,12 @@
+{
+  "version": 1773576872285,
+  "type": "auto",
+  "state": {
+    "autoSavedAt": "2026-03-15T12:14:32.285Z",
+    "messageCount": 1303,
+    "estimatedTokens": 139949,
+    "triggerReason": "threshold_reached",
+    "threshold": 0.7
+  },
+  "timestamp": 1773576872285
+}

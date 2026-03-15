@@ -1,0 +1,17 @@
+{
+  "filePath": "/root/project/app.js",
+  "lineNumber": 50,
+  "task": "测试任务",
+  "status": "进行中",
+  "savedAt": "2026-03-15T13:26:11.281Z",
+  "stepCount": 0,
+  "workspace": "/root/.nvm/versions/node/v24.14.0/lib/node_modules/openclaw/skills/persistent-memory/scripts",
+  "agentName": "test-agent",
+  "timestamp": 1773581171282,
+  "项目": "智能合约",
+  "任务": "编写记忆系统",
+  "进度": "60%",
+  "functionName": "handleRequest",
+  "project": "测试项目",
+  "test": "path"
+}

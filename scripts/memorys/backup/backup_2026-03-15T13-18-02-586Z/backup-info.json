@@ -1,0 +1,15 @@
+{
+  "timestamp": 1773580682588,
+  "agentName": "test-agent",
+  "workspace": "/root/.nvm/versions/node/v24.14.0/lib/node_modules/openclaw/skills/persistent-memory/scripts",
+  "files": [
+    "index.json",
+    "important-events.json",
+    "knowledge-base.json",
+    "work-context.json",
+    "config.json",
+    "snapshot.json",
+    "snapshots/"
+  ],
+  "version": "2.2"
+}
