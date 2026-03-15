@@ -266,9 +266,6 @@ class PersistentMemory {
     const warnings = [];
     
     // 验证数值范围
-    if (this.config.triggerThreshold < 0 || this.config.triggerThreshold > 1) {
-      errors.push('triggerThreshold must be between 0 and 1');
-    }
     if (this.config.maxAutoLoad < 0) {
       errors.push('maxAutoLoad must be positive');
     }
