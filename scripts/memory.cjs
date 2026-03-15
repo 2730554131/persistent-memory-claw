@@ -113,7 +113,62 @@ const PRECOMPILED_PATTERNS = {
     { type: 'name', regex: /我\s*(?:叫|是|叫做)\s*(.+)/i, keyFn: (m) => ({ key: '名字', value: m[1].trim() }) },
     { type: 'rule', regex: /(?:你应该|必须|应该|需要)\s*(.+)/i, keyFn: (m) => ({ key: '规则', value: m[1].trim() }) },
     { type: 'fact', regex: /(.+?)\s+(?:叫|是|叫做|位于|在)\s+(.+)/i, keyFn: (m) => m[1] && m[2] ? ({ key: m[1].trim(), value: m[2].trim() }) : null }
-  ]
+  ],
+  
+  // 意图识别模式（新增）
+  intentPatterns: {
+    // 保存记忆
+    save: [
+      { regex: /记住\s*(.+)/i, extract: 1 },
+      { regex: /记录\s*(.+)/i, extract: 1 },
+      { regex: /保存\s*(.+)/i, extract: 1 },
+      { regex: /存一下\s*(.+)/i, extract: 1 },
+      { regex: /记下来\s*(.+)/i, extract: 1 },
+      { regex: /帮我记\s*(.+)/i, extract: 1 },
+      { regex: /存起来\s*(.+)/i, extract: 1 },
+      { regex: /收藏\s*(.+)/i, extract: 1 },
+      { regex: /别忘了\s*(.+)/i, extract: 1 },
+      { regex: /把这个记下来\s*(.+)/i, extract: 1 },
+      { regex: /记下(?:这个|它|这个)\s*(.+)/i, extract: 1 }
+    ],
+    // 搜索记忆
+    search: [
+      { regex: /搜索\s*(.+)/i, extract: 1 },
+      { regex: /查找\s*(.+)/i, extract: 1 },
+      { regex: /找一下\s*(.+)/i, extract: 1 },
+      { regex: /记得\s*(.+)/i, extract: 1 },
+      { regex: /之前说.*(?:什么|过|的)\s*(.+)/i, extract: 1 },
+      { regex: /我之前说\s*(.+)/i, extract: 1 },
+      { regex: /刚才说\s*(.+)/i, extract: 1 },
+      { regex: /查一下\s*(.+)/i, extract: 1 },
+      { regex: /有啥.*记录\s*(.*)/i, extract: 1 }
+    ],
+    // 继续工作
+    continue: [
+      { regex: /继续\s*(.+)/i, extract: 1 },
+      { regex: /接着\s*(.+)/i, extract: 1 },
+      { regex: /上次.*(?:项目|那个|的)\s*(.*)/i, extract: 1 },
+      { regex: /之前.*(?:没完成|中断)\s*(.*)/i, extract: 1 },
+      { regex: /继续写\s*(.+)/i, extract: 1 },
+      { regex: /接着写\s*(.+)/i, extract: 1 }
+    ],
+    // 列出记忆
+    list: [
+      { regex: /列出\s*(.*)/i, extract: 1 },
+      { regex: /查看\s*(.*)/i, extract: 1 },
+      { regex: /有啥.*记忆\s*(.*)/i, extract: 1 },
+      { regex: /有什么.*记录\s*(.*)/i, extract: 1 },
+      { regex: /看看.*记录\s*(.*)/i, extract: 1 },
+      { regex: /显示\s*(.*)/i, extract: 1 }
+    ],
+    // 标记重要
+    important: [
+      { regex: /重要.*记住\s*(.+)/i, extract: 1 },
+      { regex: /务必记住\s*(.+)/i, extract: 1 },
+      { regex: /重点.*记住\s*(.+)/i, extract: 1 },
+      { regex: /记住.*很重要\s*(.+)/i, extract: 1 }
+    ]
+  }
 };
 
 class PersistentMemory {
@@ -128,7 +183,6 @@ class PersistentMemory {
     }
     
     this.config = {
-      triggerThreshold: options.triggerThreshold || 0.7,
       maxAutoLoad: options.maxAutoLoad || 5 * 1024,
       enableVectorSearch: options.enableVectorSearch !== false,
       compressionLevel: options.compressionLevel || 6,
@@ -257,6 +311,73 @@ class PersistentMemory {
     while (this.cacheOrder.length > this.maxCacheSize) {
       const oldest = this.cacheOrder.shift();
       this.cache.delete(oldest);
+    }
+  }
+
+  // 意图识别（新增）
+  detectIntent(message) {
+    if (!message) return null;
+    
+    const text = typeof message === 'string' ? message : (message.content || message.text || '');
+    if (!text) return null;
+    
+    // 检查每种意图类型
+    for (const [intentType, patterns] of Object.entries(PRECOMPILED_PATTERNS.intentPatterns)) {
+      for (const pattern of patterns) {
+        const match = text.match(pattern.regex);
+        if (match) {
+          return {
+            type: intentType,
+            content: match[pattern.extract] || match[0],
+            original: text,
+            timestamp: Date.now()
+          };
+        }
+      }
+    }
+    
+    return null;
+  }
+
+  // 处理识别的意图（新增）
+  async processIntent(message) {
+    const intent = this.detectIntent(message);
+    if (!intent) return null;
+    
+    const { type, content } = intent;
+    
+    switch (type) {
+      case 'save':
+        // 保存到知识库
+        await this.save('knowledgeBase', { 
+          content: content,
+          timestamp: Date.now(),
+          source: 'intent-detection'
+        });
+        return { action: 'saved', content };
+        
+      case 'search':
+        // 搜索记忆
+        const results = this.search(content);
+        return { action: 'search', content, results };
+        
+      case 'continue':
+        // 加载工作上下文
+        const context = this.loadWorkContext();
+        return { action: 'continue', context };
+        
+      case 'list':
+        // 列出所有记忆
+        const list = this.list();
+        return { action: 'list', data: list };
+        
+      case 'important':
+        // 标记重要
+        this.markImportant({ event: content, source: 'intent-detection' }, 5);
+        return { action: 'important', content };
+        
+      default:
+        return null;
     }
   }
 

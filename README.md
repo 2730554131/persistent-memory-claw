@@ -219,7 +219,7 @@ persistent-memory-claw/
 ├── README_EN.md           # English docs
 ├── SKILL.md               # OpenClaw Skill 定义
 ├── scripts/
-│   └── memory.cjs         # 核心库 (v0.3.6)
+│   └── memory.cjs         # 核心库 (v0.3.7)
 └── docs/                  # 文档目录 (可选)
 ```
 
@@ -298,6 +298,11 @@ mem.registerHook('afterSave', (data) => {
 ---
 
 ## 📝 更新日志 / Changelog
+
+### v0.3.7
+- 意图识别系统
+- 支持多种语义表达方式
+- 自动处理用户意图
 
 ### v0.3.6
 - 配置验证
