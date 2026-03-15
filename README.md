@@ -1,219 +1,351 @@
-# Persistent Memory / 持久记忆系统
+# persistent-memory-claw
 
-[English](#english) | [中文](#中文)
-
----
-
-## English
-
-### Overview
-
-Persistent Memory is an OpenClaw skill that provides cross-session long-term memory storage, search, and context inheritance capabilities.
-
-### Features
-
-- **Auto-Save**: Automatically saves memory when context reaches 70% threshold
-- **Multi-Agent Isolation**: Each agent has independent memory directory
-- **Long-Term Storage**: JSON files with gzip compression
-- **Search**: Keyword search, vector search, semantic search
-- **Important Events**: 1-5 star importance levels
-- **Self-Learning**: Experience extraction, knowledge accumulation
-- **Confidence Tracking**: Usage frequency + time decay
-- **Work Context**: Code location + thinking chain
-- **98% Accuracy**: Snapshots + SHA256 verification
-- **Auto Backup**: Daily backup with 90-day retention
-
-### Trigger Keywords
-
-When user mentions: "记忆", "记住", "继续上次", "搜索记忆", "知识库"
-
-### Quick Start
-
-```bash
-# Save memory
-node scripts/memory.cjs save knowledgeBase '{"key":"value"}'
-
-# Load memory
-node scripts/memory.cjs load knowledgeBase
-
-# Search memory
-node scripts/memory.cjs search keyword
-
-# Vector search
-node scripts/memory.cjs vector keyword
-
-# Semantic search
-node scripts/memory.cjs semantic keyword
-
-# List all memory
-node scripts/memory.cjs list
-```
-
-### Configuration
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| triggerThreshold | 0.7 | Auto-save threshold (70%) |
-| maxAutoLoad | 5KB | Auto-load max tokens |
-| backupRetentionDays | 90 | Backup retention days |
-| confidenceHalfLifeDays | 30 | Confidence decay half-life |
-
-### Project Structure
-
-```
-persistent-memory/
-├── SKILL.md           # Skill definition
-└── scripts/
-    └── memory.cjs    # Core script
-```
-
-### Integration
-
-Add to OpenClaw config:
-
-```json
-{
-  "skills": {
-    "load": {
-      "extraDirs": ["/path/to/skills"]
-    }
-  }
-}
-```
+[English](./README_EN.md) | [中文](#中文)
 
 ---
 
-## 中文
+## 🎯 项目设计初衷 / Project Design Purpose
 
-### 项目简介
+This project was created to solve the "memory loss" problem in AI assistants. Traditional AI conversations lose all context after each session ends - this system provides persistent memory capabilities for OpenClaw agents.
 
-持久记忆系统是一个 OpenClaw 技能，提供跨会话的长期记忆存储、搜索和上下文继承功能。
+本项目旨在解决 AI 助手的"失忆症"问题。传统 AI 对话在会话结束后丢失所有上下文，本系统为 OpenClaw agent 提供持久记忆能力。
 
-### 核心功能
+**核心目标 / Core Goals:**
 
-| 功能 | 说明 |
-|------|------|
-| 自动记忆 | 上下文达到 70% 时自动保存 |
-| 多 Agent 隔离 | 每个 agent 独立存储目录 |
-| 长期存储 | JSON 文件 + gzip 压缩 |
-| 搜索功能 | 关键词搜索、向量搜索、语义搜索 |
-| 重要事件 | 1-5 星重要度等级 |
-| 自我学习 | 经验提取、知识积累 |
+- 实现跨会话的记忆持久化 / Enable cross-session memory persistence
+- 多 Agent 环境下的记忆隔离 / Memory isolation for multiple agents
+- 智能搜索与知识提取 / Intelligent search and knowledge extraction
+- 高效的存储与检索 / Efficient storage and retrieval
+
+---
+
+## ✨ 功能介绍 / Features
+
+### 核心存储 / Core Storage
+
+| 功能 / Feature | 说明 / Description |
+|---------------|-------------------|
+| 持久化存储 | JSON 文件 + gzip 压缩，节省空间 |
+| 独立目录 | 每个 Agent 独立存储，互不干扰 |
+| 分片存储 | 按日期/类型分片，优化大文件 |
+| 增量模式 | 只存储增量变化，减少冗余 |
+
+### 智能搜索 / Smart Search
+
+| 功能 / Feature | 说明 / Description |
+|---------------|-------------------|
+| 关键词搜索 | 快速定位匹配内容 |
+| 向量搜索 | 基于关键词权重的语义匹配 |
+| 语义搜索 | N-gram + 余弦相似度 |
+| 混合搜索 | 结合多种搜索方式 |
+| 搜索热度 | 记录热门搜索关键词 |
+
+### 知识管理 / Knowledge Management
+
+| 功能 / Feature | 说明 / Description |
+|---------------|-------------------|
+| 经验提取 | 从对话中自动提取知识 |
 | 置信度追踪 | 使用频率 + 时间衰减 |
-| 工作上下文 | 代码位置 + 思维链 |
-| 98% 准确率 | 快照 + SHA256 校验 |
-| 自动备份 | 每日备份，保留 90 天 |
+| 重要度标记 | 1-5 星等级 |
+| 主动确认 | 待确认知识队列 |
 
-### 触发关键词
+### 工作继承 / Work Inheritance
 
-当用户提及："记忆"、"记住"、"继续上次"、"搜索记忆"、"知识库"
+| 功能 / Feature | 说明 / Description |
+|---------------|-------------------|
+| 代码继承 | 文件路径、行号、函数名 |
+| 任务继承 | 任务进度、TODO |
+| 变量继承 | 状态变量保持 |
+| 思维链 | 分层记忆上下文 |
 
-### 快速开始
+### 快照与备份 / Snapshot & Backup
 
-```bash
-# 保存记忆
-node scripts/memory.cjs save knowledgeBase '{"喜欢":"蓝色"}'
+| 功能 / Feature | 说明 / Description |
+|---------------|-------------------|
+| 多版本快照 | 保留历史版本 |
+| 增量快照 | 高效存储变化 |
+| SHA256 校验 | 98% 准确率 |
+| 自动备份 | 每日自动备份 |
+| 90天保留 | 长期历史回溯 |
 
-# 加载记忆
-node scripts/memory.cjs load knowledgeBase
+---
 
-# 关键词搜索
-node scripts/memory.cjs search 蓝色
+## 🚀 快速开始 / Quick Start
 
-# 向量搜索
-node scripts/memory.cjs vector 蓝色
-
-# 语义搜索
-node scripts/memory.cjs semantic 蓝色
-
-# 列出所有记忆
-node scripts/memory.cjs list
-```
-
-### 存储结构
-
-```
-{workspace}/memorys/
-├── knowledge-base.json     # 知识库
-├── important-events.json # 重要事件
-├── work-context.json    # 工作上下文
-├── config.json          # 配置文件
-└── session-summaries/  # 历史摘要
-```
-
-### 配置参数
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| triggerThreshold | 0.7 | 自动保存阈值 (70%) |
-| maxAutoLoad | 5KB | 自动加载最大 tokens |
-| backupRetentionDays | 90 | 备份保留天数 |
-| confidenceHalfLifeDays | 30 | 置信度半衰期(天) |
-| compressionEnabled | true | 启用压缩 |
-| compressionLevel | 6 | 压缩级别 |
-
-### 集成到 OpenClaw
-
-1. 复制 skill 到工作目录：
+### 安装 / Installation
 
 ```bash
-cp -r persistent-memory /path/to/workspace/skills/
+# 克隆仓库
+git clone https://github.com/2730554131/persistent-memory-claw.git
+
+# 进入目录
+cd persistent-memory-claw
 ```
 
-2. 配置 OpenClaw：
+### 基本使用 / Basic Usage
+
+```javascript
+const PersistentMemory = require('./scripts/memory.cjs');
+
+// 初始化
+const mem = new PersistentMemory({
+  workspace: '/path/to/workspace'
+});
+
+// 保存记忆
+await mem.save('knowledge', { name: '测试', value: '数据' });
+
+// 加载记忆
+const data = mem.load('knowledge');
+
+// 搜索
+const results = mem.search('测试');
+```
+
+### CLI 使用 / CLI Usage
+
+```bash
+# 设置工作目录
+export OPENCLAW_WORKSPACE=/path/to/workspace
+
+# 保存
+node scripts/memory.cjs save knowledge '{"key":"value"}'
+
+# 加载
+node scripts/memory.cjs load knowledge
+
+# 搜索
+node scripts/memory.cjs search 关键词
+
+# 创建快照
+node scripts/memory.cjs snapshot
+
+# 备份
+node scripts/memory.cjs backup
+```
+
+---
+
+## 📖 配置 OpenClaw / Configure with OpenClaw
+
+### 步骤 1: 配置 skills
+
+编辑 OpenClaw 配置文件 `openclaw.json`:
 
 ```json
 {
   "skills": {
     "load": {
-      "extraDirs": ["/path/to/workspace/skills"],
+      "extraDirs": [
+        "/path/to/persistent-memory-claw"
+      ],
       "watch": true
+    },
+    "entries": {
+      "persistent-memory": {
+        "enabled": true,
+        "path": "persistent-memory-claw"
+      }
     }
   }
 }
 ```
 
-3. 重启 OpenClaw：
+### 步骤 2: 重启网关
 
 ```bash
 openclaw gateway restart
 ```
 
-### CLI 命令
+### 步骤 3: 验证
 
-| 命令 | 说明 |
-|------|------|
-| save <key> <json> | 保存记忆 |
-| load <key> | 加载记忆 |
-| search <query> | 关键词搜索 |
-| vector <query> | 向量搜索 |
-| semantic <query> | 语义搜索 |
-| important <json> [level] | 标记重要 |
-| events | 列出重要事件 |
-| work save/load | 工作上下文 |
-| snapshot | 创建快照 |
-| versions | 列出快照版本 |
-| rollback <version> | 回滚快照 |
-| backup | 创建备份 |
-| list | 列出所有记忆 |
+```bash
+# 检查健康状态
+node scripts/memory.cjs health
+```
 
-### 版本
+---
 
-当前版本：v0.3.0
+## ⚙️ 参数说明 / Configuration
 
-### 许可证
+### 存储配置 / Storage
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `workspace` | string | process.cwd() | 工作目录 |
+| `storagePath` | string | {workspace}/memorys | 记忆存储路径 |
+| `backupPath` | string | {workspace}/memory-backup | 备份路径 |
+| `enableSharding` | boolean | true | 启用分片存储 |
+| `compressionEnabled` | boolean | true | 启用压缩 |
+
+### 触发配置 / Trigger
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `triggerThreshold` | number | 0.7 | 触发阈值 (0-1) |
+| `maxAutoLoad` | number | 5120 | 自动加载上限(字节) |
+| `storageMode` | string | 'incremental' | 存储模式 |
+
+### 快照配置 / Snapshot
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `enableIncrementalSnapshot` | boolean | true | 增量快照 |
+| `maxSnapshotVersions` | number | 5 | 版本数量 |
+| `snapshotInterval` | number | 5 | 快照间隔 |
+
+### 内存管理 / Memory
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `maxCacheSize` | number | 10 | 缓存大小 |
+| `importantEventsRetentionDays` | number | 365 | 重要事件保留 |
+| `maxSearchHistory` | number | 100 | 搜索历史 |
+
+### 性能优化 / Performance
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `enableAsyncIO` | boolean | true | 异步 I/O |
+| `enableIndexPersistence` | boolean | true | 索引持久化 |
+
+---
+
+## 📁 项目结构 / Project Structure
+
+```
+persistent-memory-claw/
+├── .gitignore              # Git 忽略配置
+├── README.md               # 中文文档
+├── README_EN.md           # English docs
+├── SKILL.md               # OpenClaw Skill 定义
+├── scripts/
+│   └── memory.cjs         # 核心库 (v0.3.6)
+└── docs/                  # 文档目录 (可选)
+```
+
+---
+
+## 📋 API 参考 / API Reference
+
+### 基础操作
+
+```javascript
+// 保存
+await mem.save(key, data)
+
+// 加载
+mem.load(key)
+
+// 批量
+await mem.saveBatch([{key, data}, ...])
+mem.loadBatch([key1, key2])
+```
+
+### 搜索
+
+```javascript
+mem.search(query)           // 关键词
+mem.vectorSearch(query)    // 向量
+mem.semanticSearch(query) // 语义
+mem.getSearchHotness()    // 热度
+```
+
+### 知识管理
+
+```javascript
+mem.markImportant(event, 5)     // 标记重要
+mem.autoLearn(messages)         // 自动学习
+mem.extractExperience(msgs)    // 经验提取
+mem.updateConfidence(key, 1)   // 更新置信度
+```
+
+### 快照备份
+
+```javascript
+mem.createSnapshot(state)       // 创建快照
+mem.rollbackToVersion(v)       // 回滚
+mem.createBackup()              // 备份
+mem.restoreBackup(name)        // 恢复
+```
+
+### 系统
+
+```javascript
+mem.healthCheck()         // 健康检查
+mem.getSystemSummary()   // 系统摘要
+mem.getStats()          // 统计信息
+```
+
+---
+
+## 🔧 钩子系统 / Hooks
+
+```javascript
+const mem = new PersistentMemory({
+  workspace: '/path/to/workspace',
+  hooks: {
+    afterSave: [(data) => console.log('Saved:', data.key)],
+    onError: [(err) => console.error('Error:', err)]
+  }
+});
+
+// 运行时注册
+mem.registerHook('afterSave', (data) => {
+  console.log('Key saved:', data.key);
+});
+```
+
+---
+
+## 📝 更新日志 / Changelog
+
+### v0.3.6
+- 配置验证
+- 钩子/事件系统
+- 搜索热度统计
+- 批量操作 API
+- 向量缓存
+- 动态备份文件列表
+
+### v0.3.5
+- 索引持久化
+- 健康检查接口
+- 系统摘要接口
+
+### v0.3.4
+- 异步 I/O
+- 异步压缩解压
+
+### v0.3.3
+- 文件锁机制
+- 内存索引优化
+
+### v0.3.2
+- 日志分级
+- 错误模式库清理
+- 学习历史清理
+
+### v0.3.1
+- 正则预编译
+- 校验和修复
+- LRU 优化
+- 重要事件365天保留
+
+---
+
+## 📄 许可证 / License
 
 MIT License
 
 ---
 
-## Project Design Purpose
+## 🤝 贡献 / Contributing
 
-This skill is designed to solve the following problems:
+欢迎提交 Issue 和 Pull Request！
 
-1. **Memory Loss**: Conversations are lost after session ends
-2. **Context Isolation**: Different agents' memories should not mix
-3. **Search Difficulty**: Hard to find historical information
-4. **Work Continuity**: Cannot continue previous work after /new or /reset
+---
 
-Persistent Memory provides a complete solution for AI assistants to have persistent memory capabilities.
+## 📧 联系方式 / Contact
+
+如有问题，请提交 Issue。

@@ -1,32 +1,125 @@
 #!/usr/bin/env node
 
 /**
- * Persistent Memory System v0.3.0
- * 持久记忆系统 - 高级优化版
+ * Persistent Memory System v0.3.6
+ * 持久记忆系统 - 优化版
  * 
- * 功能：
- * - 记忆存储和加载（支持压缩）
- * - 搜索功能（关键词+向量+混合）
- * - 工作上下文管理
- * - 快照和校验（98%准确率）- 多版本 + 增量
- * - 分片存储
- * - 置信度时间衰减
- * - 语义截断
- * - 重要度等级（1-5星）
- * - 自动备份
- * - 文件监听（自动保存）
- * - 主动确认学习
+ * 优化内容：
+ * - 正则预编译
+ * - 校验和递归排序
+ * - LRU 缓存优化
+ * - 批量更新优化
+ * - 内存管理优化
+ * - 重要事件365天保留
+ * - 错误模式库清理
+ * - 学习历史清理
+ * - 日志分级
+ * - CLI 异常保护
+ * - 文件锁机制
+ * - 内存索引优化
+ * - 异步 I/O 优化
+ * - 索引持久化
+ * - 健康检查接口
+ * - 备份文件列表动态化
+ * - 钩子/事件系统
+ * - 搜索热度统计
+ * - 批量操作 API
+ * - 配置验证
+ * - 向量缓存
  */
 
 const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
 
+// 文件锁系统（新增优化项：并发控制）
+class FileLock {
+  constructor() {
+    this.locks = new Map();
+  }
+  
+  acquire(key) {
+    const wait = () => new Promise(resolve => {
+      if (!this.locks.has(key)) {
+        this.locks.set(key, { count: 0, waiters: [] });
+      }
+      const lock = this.locks.get(key);
+      lock.count++;
+      if (lock.resolving) {
+        lock.waiters.push(resolve);
+      } else {
+        lock.resolving = true;
+        resolve();
+      }
+    });
+    return wait();
+  }
+  
+  release(key) {
+    const lock = this.locks.get(key);
+    if (lock) {
+      lock.count--;
+      if (lock.waiters.length > 0) {
+        const next = lock.waiters.shift();
+        setTimeout(next, 0);
+      } else {
+        lock.resolving = false;
+        if (lock.count <= 0) {
+          this.locks.delete(key);
+        }
+      }
+    }
+  }
+  
+  async withLock(key, fn) {
+    await this.acquire(key);
+    try {
+      return await fn();
+    } finally {
+      this.release(key);
+    }
+  }
+}
+
+const fileLock = new FileLock();
+
+// 日志级别系统
+const LOG_LEVELS = {
+  ERROR: 0,
+  WARN: 1,
+  INFO: 2,
+  DEBUG: 3
+};
+
+// 预编译正则表达式（优化项 #11）
+const PRECOMPILED_PATTERNS = {
+  // 经验提取模式
+  experiencePatterns: [
+    { type: 'preference', regex: /(?:我|你|他|她|它|这|那|我的|你的)\s*(?:喜欢|讨厌|最爱|想要|爱|不爱)/i },
+    { type: 'fact', regex: /(?:我|你|他|她|它|这|那)\s*(?:是|叫|位于|在|叫做|被称为)/i },
+    { type: 'rule', regex: /(?:应该|必须|不能|禁止|需要|要求|不能)/i },
+    { type: 'relationship', regex: /(?:和|与|跟|同|或者|以及)/i }
+  ],
+  // 情感分析模式
+  sentimentPatterns: {
+    positive: /喜欢|开心|好|棒|赞|优秀|爱|高兴|满意/i,
+    negative: /讨厌|差|烂|糟|错|失败|不满|失望|生气/i
+  },
+  // 键值提取模式（优先级排序）
+  keyValuePatterns: [
+    { type: 'preference', regex: /我(?:喜欢|讨厌|爱|想要)\s*(.+)/i, keyFn: (m) => ({ key: m[1].trim(), value: '用户偏好' }) },
+    { type: 'name', regex: /我\s*(?:叫|是|叫做)\s*(.+)/i, keyFn: (m) => ({ key: '名字', value: m[1].trim() }) },
+    { type: 'rule', regex: /(?:你应该|必须|应该|需要)\s*(.+)/i, keyFn: (m) => ({ key: '规则', value: m[1].trim() }) },
+    { type: 'fact', regex: /(.+?)\s+(?:叫|是|叫做|位于|在)\s+(.+)/i, keyFn: (m) => m[1] && m[2] ? ({ key: m[1].trim(), value: m[2].trim() }) : null }
+  ]
+};
+
 class PersistentMemory {
   constructor(options = {}) {
     this.workspace = options.workspace || process.cwd();
-    // 存储路径直接为 {workspace}/memorys/，不再添加 agentName 子目录
+    // 存储路径直接为 {workspace}/memorys/
     this.storagePath = options.storagePath || path.join(this.workspace, 'memorys');
     
     // 初始化存储路径
@@ -35,7 +128,7 @@ class PersistentMemory {
     }
     
     this.config = {
-      triggerThreshold: options.triggerThreshold || 0.7, // 70% 触发
+      triggerThreshold: options.triggerThreshold || 0.7,
       maxAutoLoad: options.maxAutoLoad || 5 * 1024,
       enableVectorSearch: options.enableVectorSearch !== false,
       compressionLevel: options.compressionLevel || 6,
@@ -45,17 +138,31 @@ class PersistentMemory {
       storageMode: options.storageMode || 'incremental',
       enableSharding: options.enableSharding || false,
       shardBy: options.shardBy || 'date',
-      // 新增配置
       maxSnapshotVersions: options.maxSnapshotVersions || 5,
-      enableIncrementalSnapshot: options.enableIncrementalSnapshot || false,
+      enableIncrementalSnapshot: options.enableIncrementalSnapshot !== false,  // 默认开启
       confidenceDecayEnabled: options.confidenceDecayEnabled !== false,
       confidenceHalfLifeDays: options.confidenceHalfLifeDays || 30,
-      // 备份配置
       enableAutoBackup: options.enableAutoBackup !== false,
-      backupRetentionDays: options.backupRetentionDays || 90, // 90天保留
+      backupRetentionDays: options.backupRetentionDays || 90,
       backupIntervalHours: options.backupIntervalHours || 24,
-      backupPath: options.backupPath || path.join(this.workspace, 'memorys', 'backup')
+      // 优化：重要事件保留365天
+      importantEventsRetentionDays: options.importantEventsRetentionDays || 365,
+      // 优化：待确认知识上限
+      maxPendingConfirmations: options.maxPendingConfirmations || 50,
+      // 优化：异步 I/O 模式（新增）
+      enableAsyncIO: options.enableAsyncIO !== false,
+      // 优化：分片存储（默认开启）
+      enableSharding: options.enableSharding !== false,
+      enableIndexPersistence: options.enableIndexPersistence !== false,
+      indexFile: 'search-index.json'
     };
+    
+    // 优化：备份路径移到 memorys 外层
+    if (!options.backupPath) {
+      this.config.backupPath = path.join(this.workspace, 'memory-backup');
+    } else {
+      this.config.backupPath = options.backupPath;
+    }
     
     this.files = {
       index: 'index.json',
@@ -66,12 +173,170 @@ class PersistentMemory {
       config: 'config.json'
     };
     
+    // 优化：配置验证（新增）
+    this._validateConfig();
+    
+    // 优化：钩子/事件系统（新增）
+    this.hooks = {
+      beforeSave: [],
+      afterSave: [],
+      beforeLoad: [],
+      afterLoad: [],
+      beforeSearch: [],
+      afterSearch: [],
+      onError: []
+    };
+    if (options.hooks) {
+      Object.keys(options.hooks).forEach(key => {
+        if (this.hooks[key] && Array.isArray(options.hooks[key])) {
+          this.hooks[key] = [...this.hooks[key], ...options.hooks[key]];
+        }
+      });
+    }
+    
+    // 优化：搜索热度统计（新增）
+    this.searchHistory = [];
+    this.maxSearchHistory = options.maxSearchHistory || 100;
+    
+    // 优化：向量缓存（新增）
+    this.vectorCache = new Map();
+    this.maxVectorCacheSize = options.maxVectorCacheSize || 50;
+    
     this.stepCount = 0;
-    this.cache = new Map(); // LRU 缓存
+    
+    // 优化：真正的 LRU 缓存（优化项 #2）
+    this.cache = new Map();
+    this.cacheOrder = [];
     this.maxCacheSize = 10;
+    
+    // 优化：配置脏标记（优化项 #9）
+    this.configDirty = false;
+    
+    // 优化：待确认队列上限（优化项 #11）
+    this.pendingConfirmations = [];
+    
+    // 优化：内存索引（新增优化项：搜索优化）
+    this.searchIndex = null;
+    this.indexDirty = false;
+    this.indexBuildOnDemand = true;
+    
+    // 优化：日志级别配置（新增）
+    this.logLevel = options.logLevel || LOG_LEVELS.INFO;
+    
+    // 优化：学习历史上限（新增）
+    this.maxLearningHistory = options.maxLearningHistory || 100;
+    
+    // 优化：错误记录上限（新增）
+    this.maxErrorRecords = options.maxErrorRecords || 100;
     
     this.ensureStorageDir();
     this.loadConfig();
+  }
+  
+  // 统一日志输出（新增优化项 #11）
+  _log(level, ...args) {
+    if (level <= this.logLevel) {
+      console.log('[PersistentMemory]', ...args);
+    }
+  }
+  
+  _error(...args) {
+    if (LOG_LEVELS.ERROR <= this.logLevel) {
+      console.error('[PersistentMemory ERROR]', ...args);
+    }
+  }
+
+  // 优化：LRU 缓存访问记录
+  _cacheAccess(key) {
+    const idx = this.cacheOrder.indexOf(key);
+    if (idx > -1) {
+      this.cacheOrder.splice(idx, 1);
+    }
+    this.cacheOrder.push(key);
+    // 超过上限删除最久未使用的
+    while (this.cacheOrder.length > this.maxCacheSize) {
+      const oldest = this.cacheOrder.shift();
+      this.cache.delete(oldest);
+    }
+  }
+
+  // 优化：配置验证（新增）
+  _validateConfig() {
+    const errors = [];
+    const warnings = [];
+    
+    // 验证数值范围
+    if (this.config.triggerThreshold < 0 || this.config.triggerThreshold > 1) {
+      errors.push('triggerThreshold must be between 0 and 1');
+    }
+    if (this.config.maxAutoLoad < 0) {
+      errors.push('maxAutoLoad must be positive');
+    }
+    if (this.config.compressionLevel < 1 || this.config.compressionLevel > 9) {
+      errors.push('compressionLevel must be between 1 and 9');
+    }
+    if (this.config.snapshotInterval < 1) {
+      errors.push('snapshotInterval must be positive');
+    }
+    if (this.config.maxSnapshotVersions < 1) {
+      errors.push('maxSnapshotVersions must be positive');
+    }
+    if (this.config.confidenceHalfLifeDays < 1) {
+      errors.push('confidenceHalfLifeDays must be positive');
+    }
+    if (this.config.backupRetentionDays < 1) {
+      errors.push('backupRetentionDays must be positive');
+    }
+    if (this.config.importantEventsRetentionDays < 1) {
+      errors.push('importantEventsRetentionDays must be positive');
+    }
+    
+    // 验证字符串选项
+    if (!['by-type', 'by-date', 'by-project'].includes(this.config.storageStrategy)) {
+      warnings.push(`storageStrategy "${this.config.storageStrategy}" is not standard, using by-type`);
+    }
+    if (!['full', 'incremental'].includes(this.config.storageMode)) {
+      warnings.push(`storageMode "${this.config.storageMode}" is not standard, using incremental`);
+    }
+    
+    if (errors.length > 0) {
+      throw new Error(`Config validation failed: ${errors.join(', ')}`);
+    }
+    
+    if (warnings.length > 0) {
+      this._log(LOG_LEVELS.WARN, 'Config warnings:', warnings.join(', '));
+    }
+  }
+
+  // 优化：钩子执行（新增）
+  _executeHook(hookName, data) {
+    const hooks = this.hooks[hookName] || [];
+    for (const hook of hooks) {
+      try {
+        hook(data);
+      } catch (e) {
+        this._log(LOG_LEVELS.ERROR, `Hook ${hookName} failed:`, e.message);
+      }
+    }
+  }
+
+  // 优化：注册钩子（新增）
+  registerHook(hookName, callback) {
+    if (this.hooks[hookName]) {
+      this.hooks[hookName].push(callback);
+    }
+    return this;
+  }
+
+  // 优化：移除钩子（新增）
+  unregisterHook(hookName, callback) {
+    if (this.hooks[hookName]) {
+      const idx = this.hooks[hookName].indexOf(callback);
+      if (idx > -1) {
+        this.hooks[hookName].splice(idx, 1);
+      }
+    }
+    return this;
   }
 
   ensureStorageDir() {
@@ -135,6 +400,47 @@ class PersistentMemory {
     return JSON.parse(json);
   }
 
+  // 优化：异步压缩（新增）
+  compressAsync(data) {
+    if (!this.config.compressionEnabled) return Promise.resolve(JSON.stringify(data));
+    const json = JSON.stringify(data);
+    return new Promise((resolve, reject) => {
+      zlib.gzip(json, { level: this.config.compressionLevel }, (err, result) => {
+        if (err) reject(err);
+        else resolve(result);
+      });
+    });
+  }
+
+  // 优化：异步解压（新增）
+  decompressAsync(buffer) {
+    if (!this.isGzipped(buffer)) return Promise.resolve(JSON.parse(buffer.toString('utf8')));
+    return new Promise((resolve, reject) => {
+      zlib.gunzip(buffer, (err, result) => {
+        if (err) reject(err);
+        else resolve(JSON.parse(result.toString('utf8')));
+      });
+    });
+  }
+
+  // 优化：异步文件写入（新增）
+  async _writeFileAsync(filePath, data) {
+    if (this.config.enableAsyncIO) {
+      await fsp.writeFile(filePath, data);
+    } else {
+      fs.writeFileSync(filePath, data);
+    }
+  }
+
+  // 优化：异步文件读取（新增）
+  async _readFileAsync(filePath) {
+    if (this.config.enableAsyncIO) {
+      return await fsp.readFile(filePath);
+    } else {
+      return fs.readFileSync(filePath);
+    }
+  }
+
   // 检查是否 gzip 压缩
   isGzipped(buffer) {
     return buffer[0] === 0x1f && buffer[1] === 0x8b;
@@ -150,7 +456,7 @@ class PersistentMemory {
     return shardsDir;
   }
 
-  // 保存记忆（支持分片）
+  // 保存记忆（支持分片）- 优化：支持异步 I/O
   async save(key, data, options = {}) {
     let saveData = data;
     let filePath;
@@ -168,14 +474,25 @@ class PersistentMemory {
       filePath = path.join(this.storagePath, this.files[key] || `${key}.json`);
     }
     
-    const finalData = this.config.compressionEnabled 
-      ? this.compress(saveData) 
-      : JSON.stringify(saveData, null, 2);
-    
-    fs.writeFileSync(filePath, finalData);
+    // 优化：根据配置选择同步或异步写入
+    if (this.config.enableAsyncIO) {
+      const finalData = this.config.compressionEnabled 
+        ? await this.compressAsync(saveData) 
+        : JSON.stringify(saveData, null, 2);
+      await this._writeFileAsync(filePath, finalData);
+    } else {
+      const finalData = this.config.compressionEnabled 
+        ? this.compress(saveData) 
+        : JSON.stringify(saveData, null, 2);
+      fs.writeFileSync(filePath, finalData);
+    }
     
     // 更新缓存
     this.cache.set(key, saveData);
+    
+    // 优化：标记索引需要重建，并持久化
+    this.indexDirty = true;
+    this._saveIndexToDisk();
     
     // 更新索引（不触发递归）
     if (!options.skipIndexUpdate) {
@@ -183,6 +500,47 @@ class PersistentMemory {
     }
     
     return filePath;
+  }
+
+  // 优化：批量保存（新增）
+  async saveBatch(items, options = {}) {
+    const results = [];
+    for (const item of items) {
+      const { key, data } = item;
+      try {
+        const filePath = await this.save(key, data, options);
+        results.push({ key, success: true, filePath });
+      } catch (e) {
+        results.push({ key, success: false, error: e.message });
+      }
+    }
+    return results;
+  }
+
+  // 优化：批量加载（新增）
+  loadBatch(keys, options = {}) {
+    const results = {};
+    for (const key of keys) {
+      try {
+        results[key] = { success: true, data: this.load(key, options) };
+      } catch (e) {
+        results[key] = { success: false, error: e.message };
+      }
+    }
+    return results;
+  }
+
+  // 优化：批量异步加载（新增）
+  async loadBatchAsync(keys, options = {}) {
+    const results = {};
+    for (const key of keys) {
+      try {
+        results[key] = { success: true, data: await this.loadAsync(key, options) };
+      } catch (e) {
+        results[key] = { success: false, error: e.message };
+      }
+    }
+    return results;
   }
 
   // 同步更新索引
@@ -216,10 +574,11 @@ class PersistentMemory {
     this._updateIndexSync(key, filePath);
   }
 
-  // 加载记忆
+  // 加载记忆 - 优化 LRU 缓存
   load(key, options = {}) {
     // 检查缓存
     if (options.useCache !== false && this.cache.has(key)) {
+      this._cacheAccess(key);  // 优化：记录访问顺序
       return this.cache.get(key);
     }
     
@@ -239,12 +598,13 @@ class PersistentMemory {
       const content = fs.readFileSync(filePath);
       const data = this.decompress(content);
       
-      // 更新缓存
-      if (this.cache.size >= this.maxCacheSize) {
-        const firstKey = this.cache.keys().next().value;
-        this.cache.delete(firstKey);
+      // 优化：LRU 缓存更新
+      if (this.cache.size >= this.maxCacheSize && !this.cache.has(key)) {
+        const oldest = this.cacheOrder.shift();
+        this.cache.delete(oldest);
       }
       this.cache.set(key, data);
+      this._cacheAccess(key);
       
       return data;
     } catch (e) {
@@ -252,15 +612,60 @@ class PersistentMemory {
       return options.raw ? null : (options.defaultValue || {});
     }
   }
+  
+  // 优化：异步加载记忆（新增）
+  async loadAsync(key, options = {}) {
+    // 检查缓存
+    if (options.useCache !== false && this.cache.has(key)) {
+      this._cacheAccess(key);
+      return this.cache.get(key);
+    }
+    
+    let filePath;
+    
+    if (options.shard && this.config.enableSharding) {
+      filePath = path.join(this.getShardPath(options.shard, options.shardValue), `${key}.json`);
+    } else {
+      filePath = path.join(this.storagePath, this.files[key] || `${key}.json`);
+    }
+    
+    try {
+      const content = await this._readFileAsync(filePath);
+      const data = await this.decompressAsync(content);
+      
+      // LRU 缓存更新
+      if (this.cache.size >= this.maxCacheSize && !this.cache.has(key)) {
+        const oldest = this.cacheOrder.shift();
+        this.cache.delete(oldest);
+      }
+      this.cache.set(key, data);
+      this._cacheAccess(key);
+      
+      return data;
+    } catch (e) {
+      // 文件不存在时返回默认值
+      if (e.code === 'ENOENT') {
+        return options.raw ? null : (options.defaultValue || {});
+      }
+      console.error(`Error loading ${key}:`, e);
+      return options.raw ? null : (options.defaultValue || {});
+    }
+  }
 
-  // 智能搜索（混合搜索）
-  search(query, options = {}) {
-    const results = {
-      keyword: [],
-      fuzzy: []
+  // 优化：构建内存索引（新增）
+  _buildSearchIndex() {
+    if (!this.indexBuildOnDemand) {
+      this.searchIndex = null;
+      return;
+    }
+    
+    const index = {
+      files: new Map(),
+      keywords: new Map(),
+      lastBuilt: Date.now()
     };
     
-    const searchFiles = (dir) => {
+    const scanDir = (dir) => {
       if (!fs.existsSync(dir)) return;
       
       const files = fs.readdirSync(dir);
@@ -271,7 +676,7 @@ class PersistentMemory {
         const stat = fs.statSync(filePath);
         
         if (stat.isDirectory()) {
-          searchFiles(filePath);
+          scanDir(filePath);
           continue;
         }
         
@@ -281,23 +686,16 @@ class PersistentMemory {
           const content = fs.readFileSync(filePath);
           const data = this.decompress(content);
           const jsonStr = JSON.stringify(data).toLowerCase();
-          const queryLower = query.toLowerCase();
           
-          // 关键词匹配
-          if (jsonStr.includes(queryLower)) {
-            results.keyword.push({
-              file: filePath,
-              match: 'keyword',
-              snippet: this.getSnippet(data, query)
-            });
-          } 
-          // 模糊匹配（简单实现）
-          else if (options.fuzzy && this.fuzzyMatch(jsonStr, queryLower)) {
-            results.fuzzy.push({
-              file: filePath,
-              match: 'fuzzy',
-              snippet: this.getSnippet(data, query)
-            });
+          index.files.set(filePath, { data, jsonStr });
+          
+          // 提取关键词
+          const words = jsonStr.match(/[a-zA-Z0-9\u4e00-\u9fa5]{2,}/g) || [];
+          for (const word of words) {
+            if (!index.keywords.has(word)) {
+              index.keywords.set(word, []);
+            }
+            index.keywords.get(word).push(filePath);
           }
         } catch (e) {
           // 跳过无法读取的文件
@@ -305,9 +703,143 @@ class PersistentMemory {
       }
     };
     
-    searchFiles(this.storagePath);
+    scanDir(this.storagePath);
+    this.searchIndex = index;
+  }
+
+  // 优化：确保索引已构建
+  _ensureIndex() {
+    if (!this.searchIndex || this.indexDirty) {
+      // 优化：尝试从磁盘加载持久化的索引
+      if (this.config.enableIndexPersistence) {
+        const loaded = this._loadIndexFromDisk();
+        if (loaded) {
+          this.searchIndex = loaded;
+          this.indexDirty = false;
+          return;
+        }
+      }
+      this._buildSearchIndex();
+      this.indexDirty = false;
+    }
+  }
+
+  // 优化：保存索引到磁盘（新增）
+  _saveIndexToDisk() {
+    if (!this.config.enableIndexPersistence || !this.searchIndex) return;
     
-    // 返回合并结果
+    try {
+      const indexPath = path.join(this.storagePath, this.config.indexFile);
+      // 只保存必要的索引数据，不保存大数据
+      const persistData = {
+        keywords: Array.from(this.searchIndex.keywords.entries()),
+        lastBuilt: this.searchIndex.lastBuilt
+      };
+      fs.writeFileSync(indexPath, JSON.stringify(persistData));
+    } catch (e) {
+      console.error('Failed to save index:', e);
+    }
+  }
+
+  // 优化：从磁盘加载索引（新增）
+  _loadIndexFromDisk() {
+    try {
+      const indexPath = path.join(this.storagePath, this.config.indexFile);
+      if (!fs.existsSync(indexPath)) return null;
+      
+      const data = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+      // 重建内存索引结构
+      const index = {
+        files: new Map(),
+        keywords: new Map(data.keywords || []),
+        lastBuilt: data.lastBuilt
+      };
+      return index;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // 智能搜索（混合搜索）- 优化：使用内存索引 + 热度统计
+  search(query, options = {}) {
+    // 优化：使用内存索引加速搜索
+    this._ensureIndex();
+    
+    const results = {
+      keyword: [],
+      fuzzy: []
+    };
+    
+    // 优化：记录搜索热度
+    this._recordSearch(query);
+    
+    // 如果有索引，使用索引搜索
+    if (this.searchIndex) {
+      const queryLower = query.toLowerCase();
+      
+      // 关键词匹配
+      for (const [filePath, fileData] of this.searchIndex.files) {
+        if (fileData.jsonStr.includes(queryLower)) {
+          results.keyword.push({
+            file: filePath,
+            match: 'keyword',
+            snippet: this.getSnippet(fileData.data, query)
+          });
+        } else if (options.fuzzy && this.fuzzyMatch(fileData.jsonStr, queryLower)) {
+          results.fuzzy.push({
+            file: filePath,
+            match: 'fuzzy',
+            snippet: this.getSnippet(fileData.data, query)
+          });
+        }
+      }
+    } else {
+      // 降级到原始文件扫描
+      const searchFiles = (dir) => {
+        if (!fs.existsSync(dir)) return;
+        
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          if (file === 'config.json' || file === 'index.json') continue;
+          
+          const filePath = path.join(dir, file);
+          const stat = fs.statSync(filePath);
+          
+          if (stat.isDirectory()) {
+            searchFiles(filePath);
+            continue;
+          }
+          
+          if (!file.endsWith('.json')) continue;
+          
+          try {
+            const content = fs.readFileSync(filePath);
+            const data = this.decompress(content);
+            const jsonStr = JSON.stringify(data).toLowerCase();
+            const queryLower = query.toLowerCase();
+            
+            if (jsonStr.includes(queryLower)) {
+              results.keyword.push({
+                file: filePath,
+                match: 'keyword',
+                snippet: this.getSnippet(data, query)
+              });
+            } else if (options.fuzzy && this.fuzzyMatch(jsonStr, queryLower)) {
+              results.fuzzy.push({
+                file: filePath,
+                match: 'fuzzy',
+                snippet: this.getSnippet(data, query)
+              });
+            }
+          } catch (e) {
+            // 跳过
+          }
+        }
+      };
+      
+      searchFiles(this.storagePath);
+    }
+    
     return options.fuzzy 
       ? [...results.keyword, ...results.fuzzy] 
       : results.keyword;
@@ -368,9 +900,19 @@ class PersistentMemory {
     return dotProduct / (mag1 * mag2);
   }
 
-  // 语义向量搜索（基于 N-gram）
+  // 语义向量搜索（基于 N-gram）- 优化：向量缓存
   semanticSearch(query, options = {}) {
     const { minSimilarity = 0.1, topK = 10 } = options;
+    
+    // 优化：检查向量缓存
+    const cacheKey = query.toLowerCase().trim();
+    if (this.vectorCache.has(cacheKey)) {
+      const cached = this.vectorCache.get(cacheKey);
+      // 检查缓存是否过期（1小时）
+      if (Date.now() - cached.timestamp < 3600000) {
+        return cached.results;
+      }
+    }
     
     const queryVector = this.generateNgramVector(query);
     const results = [];
@@ -440,7 +982,20 @@ class PersistentMemory {
     scanDir(this.storagePath);
     
     results.sort((a, b) => b.similarity - a.similarity);
-    return results.slice(0, topK);
+    const finalResults = results.slice(0, topK);
+    
+    // 优化：保存到向量缓存
+    if (this.vectorCache.size >= this.maxVectorCacheSize) {
+      // 删除最旧的缓存
+      const firstKey = this.vectorCache.keys().next().value;
+      this.vectorCache.delete(firstKey);
+    }
+    this.vectorCache.set(cacheKey, {
+      results: finalResults,
+      timestamp: Date.now()
+    });
+    
+    return finalResults;
   }
 
   // 获取匹配片段
@@ -763,6 +1318,33 @@ class PersistentMemory {
     return this.config.backupPath || path.join(this.workspace, 'memorys', 'backup');
   }
 
+  // 优化：获取备份文件列表（新增）
+  _getBackupFileList() {
+    const files = [
+      'config.json',
+      'snapshot.json'
+    ];
+    
+    // 从 index.json 动态获取所有数据文件
+    try {
+      const indexPath = path.join(this.storagePath, 'index.json');
+      if (fs.existsSync(indexPath)) {
+        const index = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+        Object.keys(index).forEach(key => {
+          const filePath = index[key].path;
+          const fileName = path.basename(filePath);
+          if (!files.includes(fileName)) {
+            files.push(fileName);
+          }
+        });
+      }
+    } catch (e) {
+      // 忽略错误，使用默认列表
+    }
+    
+    return files;
+  }
+
   // 创建备份
   createBackup(options = {}) {
     const config = this.config;
@@ -1052,11 +1634,15 @@ class PersistentMemory {
 
   // ==================== 主动确认学习 ====================
   
-  // 待确认的知识队列
-  pendingConfirmations = [];
+  // 优化：待确认知识队列 - 在构造函数中初始化，添加上限管理
 
-  // 请求确认学习
+  // 请求确认学习 - 优化：添加上限
   requestLearningConfirmation(knowledge, source = 'auto') {
+    // 优化：如果超过上限，移除最旧的（优化项 #14）
+    while (this.pendingConfirmations.length >= this.config.maxPendingConfirmations) {
+      this.pendingConfirmations.shift();
+    }
+    
     const confirmation = {
       id: Date.now(),
       knowledge,
@@ -1253,17 +1839,33 @@ class PersistentMemory {
     }
   }
 
-  // 计算校验和（SHA256）
+  // 优化：校验和递归排序（优化项 #12）
+  // 计算校验和（SHA256）- 修复嵌套对象排序问题
   calculateChecksum(data) {
-    const str = JSON.stringify(data, Object.keys(data).sort());
+    const sorted = this._sortObjectKeys(data);
+    const str = JSON.stringify(sorted);
     return crypto.createHash('sha256').update(str).digest('hex');
+  }
+  
+  // 递归排序对象所有层的 key
+  _sortObjectKeys(obj) {
+    if (obj === null || typeof obj !== 'object') {
+      return obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(item => this._sortObjectKeys(item));
+    }
+    const sorted = {};
+    Object.keys(obj).sort().forEach(key => {
+      sorted[key] = this._sortObjectKeys(obj[key]);
+    });
+    return sorted;
   }
 
   // ==================== 重要度等级 ====================
   
-  // 标记重要事件（支持1-5星等级）
+  // 标记重要事件（支持1-5星等级）- 优化：365天保留
   markImportant(event, importance = 3) {
-    // 直接读取文件，不使用增量模式
     const filePath = path.join(this.storagePath, this.files.importantEvents);
     let events = [];
     
@@ -1271,11 +1873,9 @@ class PersistentMemory {
       try {
         const content = fs.readFileSync(filePath, 'utf8');
         const data = JSON.parse(content);
-        // 确保是数组
         if (Array.isArray(data)) {
           events = data;
         } else if (data && typeof data === 'object') {
-          // 兼容旧格式
           events = Object.values(data).filter(v => v && typeof v === 'object');
         }
       } catch (e) {
@@ -1283,7 +1883,12 @@ class PersistentMemory {
       }
     }
     
-    const normalizedImportance = Math.min(5, Math.max(1, importance)); // 1-5星
+    // 优化：清理超过365天的重要事件（优化项 #18）
+    const retentionMs = this.config.importantEventsRetentionDays * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - retentionMs;
+    events = events.filter(e => (e.timestamp || 0) > cutoff);
+    
+    const normalizedImportance = Math.min(5, Math.max(1, importance));
     
     const eventWithImportance = {
       ...event,
@@ -1295,7 +1900,6 @@ class PersistentMemory {
     
     events.push(eventWithImportance);
     
-    // 直接保存为数组，不使用增量模式
     fs.writeFileSync(filePath, JSON.stringify(events, null, 2));
     
     return filePath;
@@ -1349,7 +1953,7 @@ class PersistentMemory {
     return { success: true, event: events[eventIndex] };
   }
 
-  // 记录错误模式
+  // 记录错误模式 - 优化：添加错误记录上限清理（新增）
   recordError(error) {
     const errors = this.load('errorPatterns');
     if (!Array.isArray(errors)) {
@@ -1375,6 +1979,12 @@ class PersistentMemory {
       // 更新错误计数
       exists.count = (exists.count || 1) + 1;
       exists.lastSeen = Date.now();
+    }
+    
+    // 优化：超过上限时，按时间排序保留最新的（新增）
+    if (errors.length > this.maxErrorRecords) {
+      errors.sort((a, b) => (b.lastSeen || b.timestamp || 0) - (a.lastSeen || a.timestamp || 0));
+      errors.length = this.maxErrorRecords;
     }
     
     return this.save('errorPatterns', errors);
@@ -1534,26 +2144,18 @@ class PersistentMemory {
 
   // ==================== 经验提取 ====================
   
-  // 从对话中提取可复用的知识
+  // 从对话中提取可复用的知识 - 优化：使用预编译正则
   extractExperience(messages) {
     const extracted = [];
-    const patterns = [
-      // 用户偏好模式 - 更灵活
-      { type: 'preference', regex: /(?:我|你|他|她|它|这|那|我的|你的)\s*(?:喜欢|讨厌|最爱|想要|爱|不爱)/i },
-      // 事实模式
-      { type: 'fact', regex: /(?:我|你|他|她|它|这|那)\s*(?:是|叫|位于|在|叫做|被称为)/i },
-      // 规则模式
-      { type: 'rule', regex: /(?:应该|必须|不能|禁止|需要|要求|不能)/i },
-      // 关系模式
-      { type: 'relationship', regex: /(?:和|与|跟|同|或者|以及)/i }
-    ];
+    // 优化：使用预编译的正则表达式（优化项 #11）
+    const patterns = PRECOMPILED_PATTERNS.experiencePatterns;
     
     for (const msg of messages) {
       const text = typeof msg === 'string' ? msg : (msg.content || msg.text || '');
       
       for (const pattern of patterns) {
         if (pattern.regex.test(text)) {
-          // 尝试提取关键信息
+          // 尝试提取关键信息 - 优化：使用优先级排序
           const keyValue = this.extractKeyValue(text);
           extracted.push({
             type: pattern.type,
@@ -1570,36 +2172,23 @@ class PersistentMemory {
     return extracted;
   }
 
-  // 提取键值对 - 更灵活的提取
+  // 提取键值对 - 优化：优先级排序，避免冲突（优化项 #15）
   extractKeyValue(text) {
-    // 模式1: "我喜欢 X"
-    let match = text.match(/我(?:喜欢|讨厌|爱|想要|想要)\s*(.+)/i);
-    if (match) {
-      return { key: match[1].trim(), value: '用户偏好' };
-    }
+    // 优化：使用预编译的模式，按优先级顺序匹配
+    const patterns = PRECOMPILED_PATTERNS.keyValuePatterns;
     
-    // 模式2: "我是 X"
-    match = text.match(/我\s*(?:叫|是|叫做)\s*(.+)/i);
-    if (match) {
-      return { key: '名字', value: match[1].trim() };
-    }
-    
-    // 模式3: "X 是 Y"
-    match = text.match(/(.+?)\s+(?:叫|是|叫做|位于|在)\s+(.+)/i);
-    if (match && match[1] && match[2]) {
-      return { key: match[1].trim(), value: match[2].trim() };
-    }
-    
-    // 模式4: "你应该/必须 X"
-    match = text.match(/(?:你应该|必须|应该|需要)\s*(.+)/i);
-    if (match) {
-      return { key: '规则', value: match[1].trim() };
+    for (const pattern of patterns) {
+      const match = text.match(pattern.regex);
+      if (match) {
+        const result = pattern.keyFn(match);
+        if (result) return result;
+      }
     }
     
     return null;
   }
 
-  // 自动学习：从对话中提取并保存知识
+  // 自动学习：从对话中提取并保存知识 - 优化：批量更新置信度 + 学习历史上限
   autoLearn(messages) {
     const extracted = this.extractExperience(messages);
     const knowledge = this.load('knowledgeBase');
@@ -1608,17 +2197,19 @@ class PersistentMemory {
       knowledge._learning = { history: [] };
     }
     
+    // 优化：收集需要更新置信度的 key（优化项 #13）
+    const keysToUpdate = [];
+    
     for (const exp of extracted) {
       if (exp.extracted) {
         const { key, value } = exp.extracted;
         
         // 检查是否已存在
         if (knowledge[key]) {
-          // 更新已有知识
           knowledge[key] = value;
         } else {
-          // 添加新知识
           knowledge[key] = value;
+          keysToUpdate.push(key);  // 只对新增知识更新置信度
         }
         
         // 记录学习历史
@@ -1631,20 +2222,59 @@ class PersistentMemory {
       }
     }
     
-    // 保存并更新置信度
+    // 优化：超过学习历史上限时，保留最新的（新增）
+    if (knowledge._learning.history.length > this.maxLearningHistory) {
+      knowledge._learning.history.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      knowledge._learning.history.length = this.maxLearningHistory;
+    }
+    
+    // 保存知识库（一次 save）
     this.save('knowledgeBase', knowledge, { skipConfidenceUpdate: true });
     
-    // 为新知识设置初始置信度
-    for (const exp of extracted) {
-      if (exp.extracted) {
-        this.updateConfidence(exp.extracted.key, 1);
+    // 优化：批量更新置信度（优化项 #13）
+    if (keysToUpdate.length > 0) {
+      const confidenceUpdates = {};
+      for (const key of keysToUpdate) {
+        confidenceUpdates[key] = 1;
       }
+      this._batchUpdateConfidence(confidenceUpdates);
     }
     
     return { learned: extracted.length, experiences: extracted };
   }
+  
+  // 优化：批量更新置信度
+  _batchUpdateConfidence(updates) {
+    const knowledge = this.load('knowledgeBase');
+    if (!knowledge._confidence) {
+      knowledge._confidence = {};
+    }
+    
+    const now = Date.now();
+    
+    for (const [key, usage] of Object.entries(updates)) {
+      if (!knowledge._confidence[key]) {
+        knowledge._confidence[key] = {
+          count: 0,
+          baseWeight: 0.5,
+          effectiveWeight: 0.5,
+          lastUsed: now,
+          firstSeen: now
+        };
+      }
+      
+      const conf = knowledge._confidence[key];
+      conf.count += usage;
+      conf.lastUsed = now;
+      conf.baseWeight = Math.min(1, Math.log10(conf.count + 1) / 4);
+      conf.effectiveWeight = this.calculateDecayWeight(conf.lastUsed, conf.firstSeen);
+    }
+    
+    knowledge._confidence = knowledge._confidence;
+    this.save('knowledgeBase', knowledge, { skipConfidenceUpdate: true });
+  }
 
-  // 分析对话趋势
+  // 分析对话趋势 - 优化：使用预编译正则
   analyzeTrends(messages, timeWindow = 7 * 24 * 60 * 60 * 1000) {
     const now = Date.now();
     const recent = messages.filter(m => {
@@ -1659,6 +2289,9 @@ class PersistentMemory {
       timeDistribution: {}
     };
     
+    // 优化：使用预编译的正则（优化项 #11）
+    const { positive, negative } = PRECOMPILED_PATTERNS.sentimentPatterns;
+    
     for (const msg of recent) {
       const text = typeof msg === 'string' ? msg : (msg.content || msg.text || '');
       
@@ -1668,9 +2301,9 @@ class PersistentMemory {
         trends.topics[word] = (trends.topics[word] || 0) + 1;
       }
       
-      // 简单情感分析
-      if (/喜欢|开心|好|棒|赞|优秀/i.test(text)) trends.sentiments.positive++;
-      else if (/讨厌|差|烂|糟|错|失败/i.test(text)) trends.sentiments.negative++;
+      // 优化：使用预编译的情感分析模式
+      if (positive.test(text)) trends.sentiments.positive++;
+      else if (negative.test(text)) trends.sentiments.negative++;
       else trends.sentiments.neutral++;
       
       // 时间分布
@@ -1710,10 +2343,18 @@ class PersistentMemory {
     return this.stepCount % this.config.snapshotInterval === 0;
   }
 
-  // 智能摘要（语义截断）
+  // 智能摘要（语义截断）- 优化：统一返回值类型
   summarize(data, maxLength = 500, options = {}) {
     const str = JSON.stringify(data);
-    if (str.length <= maxLength) return str;
+    
+    // 优化：统一返回值类型，总是返回对象（新增）
+    if (str.length <= maxLength) {
+      return {
+        original: data,
+        truncated: false,
+        originalSize: str.length
+      };
+    }
     
     const { preserveKeys = [], minValueLength = 10 } = options;
     
@@ -1773,11 +2414,15 @@ class PersistentMemory {
       }
     }
     
-    summary._truncated = true;
-    summary._originalKeys = keys.length;
-    summary._truncatedAt = Date.now();
-    
-    return JSON.stringify(summary);
+    // 优化：统一返回值格式
+    return {
+      data: summary,
+      truncated: true,
+      originalSize: str.length,
+      truncatedSize: JSON.stringify(summary).length,
+      originalKeys: keys.length,
+      truncatedAt: Date.now()
+    };
   }
 
   // 按句子截断（保证语义完整）
@@ -1864,6 +2509,146 @@ class PersistentMemory {
     
     return stats;
   }
+
+  // 优化：记录搜索热度（新增）
+  _recordSearch(query) {
+    const normalizedQuery = query.toLowerCase().trim();
+    const existing = this.searchHistory.find(h => h.query === normalizedQuery);
+    if (existing) {
+      existing.count++;
+      existing.lastSearched = Date.now();
+    } else {
+      this.searchHistory.push({
+        query: normalizedQuery,
+        count: 1,
+        firstSearched: Date.now(),
+        lastSearched: Date.now()
+      });
+    }
+    // 限制历史记录数量
+    if (this.searchHistory.length > this.maxSearchHistory) {
+      this.searchHistory.sort((a, b) => b.count - a.count);
+      this.searchHistory.length = this.maxSearchHistory;
+    }
+  }
+
+  // 优化：获取搜索热度（新增）
+  getSearchHotness(limit = 10) {
+    return this.searchHistory
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit);
+  }
+
+  // 优化：清除搜索历史（新增）
+  clearSearchHistory() {
+    this.searchHistory = [];
+  }
+
+  // 优化：健康检查接口（新增）
+  healthCheck() {
+    const health = {
+      status: 'healthy',
+      timestamp: Date.now(),
+      checks: []
+    };
+    
+    // 检查存储目录
+    try {
+      if (!fs.existsSync(this.storagePath)) {
+        health.checks.push({ component: 'storage', status: 'error', message: 'Storage path does not exist' });
+        health.status = 'degraded';
+      } else {
+        health.checks.push({ component: 'storage', status: 'ok' });
+      }
+    } catch (e) {
+      health.checks.push({ component: 'storage', status: 'error', message: e.message });
+      health.status = 'unhealthy';
+    }
+    
+    // 检查缓存
+    health.checks.push({ 
+      component: 'cache', 
+      status: 'ok', 
+      size: this.cache.size, 
+      maxSize: this.maxCacheSize 
+    });
+    
+    // 检查索引
+    const indexStatus = this.searchIndex ? 'ok' : 'not_built';
+    health.checks.push({ 
+      component: 'searchIndex', 
+      status: indexStatus,
+      lastBuilt: this.searchIndex?.lastBuilt 
+    });
+    
+    // 检查配置文件
+    try {
+      const configPath = path.join(this.storagePath, this.files.config);
+      if (fs.existsSync(configPath)) {
+        health.checks.push({ component: 'config', status: 'ok' });
+      } else {
+        health.checks.push({ component: 'config', status: 'warning', message: 'Config not found' });
+      }
+    } catch (e) {
+      health.checks.push({ component: 'config', status: 'error', message: e.message });
+    }
+    
+    // 检查备份目录
+    try {
+      const backupPath = this.config.backupPath;
+      const backupExists = fs.existsSync(backupPath);
+      health.checks.push({ 
+        component: 'backup', 
+        status: backupExists ? 'ok' : 'warning', 
+        path: backupPath 
+      });
+    } catch (e) {
+      health.checks.push({ component: 'backup', status: 'error', message: e.message });
+    }
+    
+    return health;
+  }
+
+  // 优化：系统摘要接口（新增）
+  getSystemSummary() {
+    const summary = {
+      workspace: this.workspace,
+      storagePath: this.storagePath,
+      config: {
+        compression: this.config.compressionEnabled,
+        asyncIO: this.config.enableAsyncIO,
+        indexPersistence: this.config.enableIndexPersistence,
+        vectorSearch: this.config.enableVectorSearch
+      },
+      stats: {
+        cacheSize: this.cache.size,
+        maxCacheSize: this.maxCacheSize,
+        pendingConfirmations: this.pendingConfirmations.length,
+        stepCount: this.stepCount
+      },
+      files: {}
+    };
+    
+    // 统计各类型文件
+    const statFiles = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      const files = fs.readdirSync(dir);
+      for (const file of files) {
+        const filePath = path.join(dir, file);
+        const stat = fs.statSync(filePath);
+        if (stat.isDirectory()) {
+          statFiles(filePath);
+        } else {
+          summary.files[file] = stat.size;
+        }
+      }
+    };
+    
+    statFiles(this.storagePath);
+    summary.stats.totalSize = Object.values(summary.files).reduce((a, b) => a + b, 0);
+    
+    return summary;
+  }
 }
 
 // CLI 接口
@@ -1876,14 +2661,19 @@ if (require.main === module) {
   });
 
   const commands = {
-    // 保存记忆
+    // 保存记忆 - 优化：添加异常保护
     save: () => {
       const [key, jsonData] = [args[1], args[2]];
       if (!key || !jsonData) {
         console.log('Usage: save <key> <json-data>');
         return;
       }
-      mem.save(key, JSON.parse(jsonData)).then(path => console.log('Saved:', path));
+      try {
+        const data = JSON.parse(jsonData);
+        mem.save(key, data).then(path => console.log('Saved:', path));
+      } catch (e) {
+        console.error('Error: Invalid JSON data -', e.message);
+      }
     },
     
     // 加载记忆
@@ -1998,21 +2788,30 @@ if (require.main === module) {
       console.log(JSON.stringify(mem.getTopImportantEvents(count), null, 2));
     },
     
-    // 记录错误
+    // 记录错误 - 优化：添加异常保护
     error: () => {
       const jsonData = args[1];
       if (!jsonData) {
         console.log('Usage: error <json-data>');
         return;
       }
-      mem.recordError(JSON.parse(jsonData)).then(path => console.log('Recorded:', path));
+      try {
+        const data = JSON.parse(jsonData);
+        mem.recordError(data).then(path => console.log('Recorded:', path));
+      } catch (e) {
+        console.error('Error: Invalid JSON data -', e.message);
+      }
     },
     
-    // 创建快照
+    // 创建快照 - 优化：添加异常保护
     snapshot: () => {
-      const state = args[1] ? JSON.parse(args[1]) : { note: 'manual snapshot' };
-      const result = mem.createSnapshot(state);
-      console.log('Snapshot created:', JSON.stringify(result, null, 2));
+      try {
+        const state = args[1] ? JSON.parse(args[1]) : { note: 'manual snapshot' };
+        const result = mem.createSnapshot(state);
+        console.log('Snapshot created:', JSON.stringify(result, null, 2));
+      } catch (e) {
+        console.error('Error: Invalid JSON data -', e.message);
+      }
     },
 
     // 获取快照版本列表
@@ -2071,7 +2870,7 @@ if (require.main === module) {
       console.log('Updated config:', mem.updateConfig({ [key]: parsedValue }));
     },
     
-    // 工作上下文
+    // 工作上下文 - 优化：添加异常保护
     work: () => {
       const subCommand = args[1];
       if (subCommand === 'save') {
@@ -2080,7 +2879,12 @@ if (require.main === module) {
           console.log('Usage: work save <json-data>');
           return;
         }
-        mem.saveWorkContext(JSON.parse(jsonData)).then(path => console.log('Work context saved:', path));
+        try {
+          const data = JSON.parse(jsonData);
+          mem.saveWorkContext(data).then(path => console.log('Work context saved:', path));
+        } catch (e) {
+          console.error('Error: Invalid JSON data -', e.message);
+        }
       } else if (subCommand === 'load') {
         console.log(JSON.stringify(mem.loadWorkContext(), null, 2));
       } else {
@@ -2119,46 +2923,58 @@ if (require.main === module) {
       }
     },
     
-    // 经验提取
+    // 经验提取 - 优化：添加异常保护
     learn: () => {
       const subCommand = args[1];
       if (subCommand === 'extract') {
-        // 从传入的消息中提取经验
         const jsonData = args[2];
         if (!jsonData) {
           console.log('Usage: learn extract <json-messages>');
           return;
         }
-        const messages = JSON.parse(jsonData);
-        console.log(JSON.stringify(mem.extractExperience(messages), null, 2));
+        try {
+          const messages = JSON.parse(jsonData);
+          console.log(JSON.stringify(mem.extractExperience(messages), null, 2));
+        } catch (e) {
+          console.error('Error: Invalid JSON data -', e.message);
+        }
       } else if (subCommand === 'auto') {
-        // 自动学习
         const jsonData = args[2];
         if (!jsonData) {
           console.log('Usage: learn auto <json-messages>');
           return;
         }
-        const messages = JSON.parse(jsonData);
-        console.log(JSON.stringify(mem.autoLearn(messages), null, 2));
+        try {
+          const messages = JSON.parse(jsonData);
+          console.log(JSON.stringify(mem.autoLearn(messages), null, 2));
+        } catch (e) {
+          console.error('Error: Invalid JSON data -', e.message);
+        }
       } else if (subCommand === 'trends') {
-        // 分析趋势
         const jsonData = args[2];
         if (!jsonData) {
           console.log('Usage: learn trends <json-messages>');
           return;
         }
-        const messages = JSON.parse(jsonData);
-        console.log(JSON.stringify(mem.analyzeTrends(messages), null, 2));
+        try {
+          const messages = JSON.parse(jsonData);
+          console.log(JSON.stringify(mem.analyzeTrends(messages), null, 2));
+        } catch (e) {
+          console.error('Error: Invalid JSON data -', e.message);
+        }
       } else if (subCommand === 'smart') {
-        // 智能学习（带确认）
         const jsonData = args[2];
         const autoConfirm = args[3] === 'true';
         if (!jsonData) {
           console.log('Usage: learn smart <json-messages> [autoConfirm]');
           return;
         }
-        const messages = JSON.parse(jsonData);
-        console.log(JSON.stringify(mem.smartLearn(messages, autoConfirm), null, 2));
+        try {
+          const messages = JSON.parse(jsonData);
+          console.log(JSON.stringify(mem.smartLearn(messages, autoConfirm), null, 2));
+        } catch (e) {
+          console.error('Error: Invalid JSON data -', e.message);
+        }
       } else {
         console.log('Usage: learn <extract|auto|trends|smart> <json-data>');
       }
@@ -2226,7 +3042,7 @@ if (require.main === module) {
     // 帮助
     help: () => {
       console.log(`
-Persistent Memory CLI v0.3.0
+Persistent Memory CLI v0.3.6
 
 Usage: node memory.cjs <command> [options]
 
