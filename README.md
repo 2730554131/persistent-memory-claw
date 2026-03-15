@@ -182,7 +182,6 @@ node scripts/memory.cjs health
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `triggerThreshold` | number | 0.7 | 触发阈值 (0-1) |
 | `maxAutoLoad` | number | 5120 | 自动加载上限(字节) |
 | `storageMode` | string | 'incremental' | 存储模式 |
 
