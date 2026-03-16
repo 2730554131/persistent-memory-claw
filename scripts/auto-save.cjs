@@ -169,50 +169,25 @@ async function saveConversation(conversation, sessionId) {
 
 async function resetSession(sessionInfo) {
   try {
-    // 先尝试通过 openclaw agent 发送 /new 命令
-    const sessionsDir = path.dirname(sessionInfo.sessionPath);
-    const sessionsJsonPath = path.join(sessionsDir, 'sessions.json');
-    let deliveryContext = null;
+    // 使用文件重命名方式触发新会话
+    // 将当前会话文件重命名为 .reset.* 格式，Gateway 会自动创建新会话
     
-    try {
-      const sessionsJson = JSON.parse(fs.readFileSync(sessionsJsonPath, 'utf8'));
-      for (const [key, value] of Object.entries(sessionsJson)) {
-        if (value.sessionFile && value.sessionFile.includes(sessionInfo.sessionId)) {
-          deliveryContext = value.deliveryContext;
-          break;
-        }
-      }
-    } catch (e) {
-      console.log('Could not read sessions.json:', e.message);
-    }
-    
-    if (deliveryContext) {
-      const channel = deliveryContext.channel || 'feishu';
-      let to = deliveryContext.to || '';
-      to = to.replace(/^(user:|channel:)/, '');
-      
-      console.log(`\n🔄 Creating new session...`);
-      console.log(`   Channel: ${channel}, To: ${to}`);
-      
-      const { execSync } = require('child_process');
-      try {
-        // 发送 /new 命令，这会创建一个新的会话
-        execSync(`openclaw agent --channel ${channel} --to "${to}" --message "/new"`, {
-          stdio: 'inherit',
-          timeout: 30000
-        });
-        console.log('✅ New session created successfully');
-        return true;
-      } catch (e) {
-        console.log('CLI method failed:', e.message);
-      }
-    }
-    
-    // 如果 CLI 方法失败，使用文件重命名方式
-    console.log('   Falling back to file-based reset...');
     const resetFilePath = sessionInfo.sessionPath + `.reset.${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    
+    console.log(`\n🔄 Resetting session...`);
+    console.log(`   Old: ${path.basename(sessionInfo.sessionPath)}`);
+    console.log(`   New: ${path.basename(resetFilePath)}`);
+    
+    // 重命名会话文件
     fs.renameSync(sessionInfo.sessionPath, resetFilePath);
-    console.log('✅ Session file renamed, new session will be created on next message');
+    
+    // 同时删除 lock 文件（如果存在）
+    const lockFile = sessionInfo.sessionPath + '.lock';
+    if (fs.existsSync(lockFile)) {
+      fs.unlinkSync(lockFile);
+    }
+    
+    console.log('✅ Session reset complete, new session will be created on next message');
     return true;
     
   } catch (e) {
