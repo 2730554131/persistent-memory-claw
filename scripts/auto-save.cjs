@@ -46,7 +46,7 @@ const { execSync } = require('child_process');
 
 async function getCurrentSessionInfo() {
   try {
-    // 使用 exec 调用 OpenClaw 的 sessions_list 来获取当前会话信息
+    // 读取当前会话的 sessions 目录
     const sessionsDir = process.env.SESSIONS_DIR || path.join(process.env.HOME || '/root', '.openclaw', 'agents', 'lobster-development-assistant', 'sessions');
     
     if (!fs.existsSync(sessionsDir)) {
@@ -69,37 +69,25 @@ async function getCurrentSessionInfo() {
     const latestSession = files[0].name.replace('.jsonl', '');
     const sessionPath = path.join(sessionsDir, files[0].name);
     
-    // 读取会话文件获取 token 使用情况
-    // 注意：这里取最新的 message 条目中的 usage 来估算当前上下文使用量
+    // 读取会话文件，累加所有 message 的 usage
     const lines = fs.readFileSync(sessionPath, 'utf8').split('\n').filter(l => l.trim());
     
-    let lastUsage = null;
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
     
-    // 从后往前找最后一个有 usage 的 message
-    for (let i = lines.length - 1; i >= 0; i--) {
+    for (const line of lines) {
       try {
-        const entry = JSON.parse(lines[i]);
+        const entry = JSON.parse(line);
         if (entry.type === 'message' && entry.message?.usage) {
-          lastUsage = entry.message.usage;
-          break;
+          totalInputTokens += entry.message.usage.input || 0;
+          totalOutputTokens += entry.message.usage.output || 0;
         }
       } catch (e) {
         // 跳过解析错误
       }
     }
     
-    if (!lastUsage) {
-      // 如果没有 usage 数据，默认返回低使用率
-      return {
-        sessionId: latestSession,
-        sessionPath,
-        totalTokens: 0,
-        contextWindow: 200000,
-        usageRatio: 0
-      };
-    }
-    
-    const totalTokens = (lastUsage.input || 0) + (lastUsage.output || 0);
+    const totalTokens = totalInputTokens + totalOutputTokens;
     const contextWindow = 200000; // MiniMax M2.5 的上下文窗口
     const usageRatio = totalTokens / contextWindow;
     
@@ -109,8 +97,8 @@ async function getCurrentSessionInfo() {
       totalTokens,
       contextWindow,
       usageRatio,
-      totalInputTokens: lastUsage.input || 0,
-      totalOutputTokens: lastUsage.output || 0
+      totalInputTokens,
+      totalOutputTokens
     };
   } catch (e) {
     console.error('Error getting session info:', e.message);
