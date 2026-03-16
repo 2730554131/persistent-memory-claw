@@ -92,13 +92,38 @@ node scripts/memory.cjs list
 // 参数
 {
   threshold: 0.8,    // 触发阈值 (0-1)，默认 0.8
-  autoReset: false    // 是否自动重置，默认 false
+  autoReset: true     // 是否自动创建新会话，默认 true
 }
+```
+
+**工作流程：**
+
+1. 检查当前会话的上下文使用比例
+2. 如果达到阈值（默认 80%）：
+   - 提取当前会话的所有对话内容
+   - 自动保存到记忆系统（分类：conversation，包含时间戳）
+   - 归档当前会话文件
+   - 创建新会话
+3. 返回保存结果和新会话信息
+
+**使用方式：**
+
+```bash
+# CLI 模式
+node scripts/auto-save.cjs 0.8 --save-reset
+
+# 参数说明：
+# 0.8 - 阈值 (80%)
+# --save-reset - 自动保存并创建新会话
 ```
 
 **配置 heartbeat 定期检查：**
 
 在 workspace 的 `HEARTBEAT.md` 中添加定时任务，定期调用 `persistent_memory_auto_save` action。
+
+**与 OpenClaw 压缩机制集成：**
+
+建议配合 OpenClaw 内置的 `memoryFlush` 使用，在压缩前自动保存重要上下文：
 
 ---
 
