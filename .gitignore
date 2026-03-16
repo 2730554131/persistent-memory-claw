@@ -1,0 +1,18 @@
+# 依赖
+node_modules/
+
+# 记忆存储（运行时生成）
+memorys/
+memory-backup/
+*.json.bak
+
+# 临时文件
+.DS_Store
+Thumbs.db
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
