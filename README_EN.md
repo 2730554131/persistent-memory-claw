@@ -78,6 +78,8 @@ git clone https://github.com/2730554131/persistent-memory-claw.git
 
 # Enter directory
 cd persistent-memory-claw
+
+# ✅ No need to manually install dependencies! They will be installed automatically on first use
 ```
 
 ### Basic Usage
