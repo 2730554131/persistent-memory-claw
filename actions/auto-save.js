@@ -35,38 +35,28 @@ function ensureDependencies() {
 ensureDependencies();
 
 /**
- * 自动保存并重置会话 action
- * 当上下文使用比例达到阈值时，自动保存会话并重置
+ * 检查会话上下文使用情况 action
+ * 当上下文使用比例达到阈值时，返回提醒和统计信息
  */
 const { main } = require('../scripts/auto-save.cjs');
 
 module.exports = {
   name: 'persistent_memory_auto_save',
-  description: '检查上下文使用比例，当达到阈值(默认80%)时自动保存会话并重置',
+  description: '检查上下文使用比例，当达到阈值(默认80%)时提醒用户并发送会话统计',
   parameters: {
     type: 'object',
     properties: {
       threshold: {
         type: 'number',
         default: 0.8,
-        description: '触发保存的上下文使用比例阈值 (0-1)，默认 0.8'
-      },
-      autoReset: {
-        type: 'boolean',
-        default: true,
-        description: '保存后是否自动创建新会话，默认 true'
+        description: '触发提醒的上下文使用比例阈值 (0-1)，默认 0.8'
       }
     }
   },
   async run(params) {
-    const { threshold = 0.8, autoReset = true } = params;
+    const { threshold = 0.8 } = params;
     
     try {
-      // 通过环境变量传递 autoReset 标志
-      if (autoReset) {
-        process.env.AUTO_RESET_SESSION = 'true';
-      }
-      
       const result = await main();
       
       return result;

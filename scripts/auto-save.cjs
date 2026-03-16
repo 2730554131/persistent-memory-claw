@@ -196,9 +196,60 @@ async function resetSession(sessionInfo) {
   }
 }
 
+async function getSessionStats(sessionInfo) {
+  // 获取会话详细统计信息
+  const lines = fs.readFileSync(sessionInfo.sessionPath, 'utf8').split('\n').filter(l => l.trim());
+  
+  let userMessages = 0;
+  let assistantMessages = 0;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  let firstTimestamp = null;
+  let lastTimestamp = null;
+  
+  for (const line of lines) {
+    try {
+      const entry = JSON.parse(line);
+      
+      if (entry.type === 'message' && entry.message?.role) {
+        if (entry.message.role === 'user') {
+          userMessages++;
+        } else if (entry.message.role === 'assistant') {
+          assistantMessages++;
+        }
+        
+        if (entry.message.usage) {
+          totalInputTokens += entry.message.usage.input || 0;
+          totalOutputTokens += entry.message.usage.output || 0;
+        }
+        
+        if (entry.timestamp) {
+          if (!firstTimestamp) firstTimestamp = entry.timestamp;
+          lastTimestamp = entry.timestamp;
+        }
+      }
+    } catch (e) {
+      // 跳过解析错误
+    }
+  }
+  
+  return {
+    sessionId: sessionInfo.sessionId,
+    totalTokens: totalInputTokens + totalOutputTokens,
+    contextWindow: sessionInfo.contextWindow,
+    usageRatio: (totalInputTokens + totalOutputTokens) / sessionInfo.contextWindow,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+    userMessages,
+    assistantMessages,
+    totalMessages: userMessages + assistantMessages,
+    firstTimestamp,
+    lastTimestamp
+  };
+}
+
 async function main() {
   const threshold = parseFloat(process.argv[2]) || 0.8;
-  const autoReset = process.argv.includes('--reset') || process.env.AUTO_RESET_SESSION === 'true';
   
   console.log(`🔍 Checking session context usage (threshold: ${threshold * 100}%)...`);
   
@@ -209,48 +260,52 @@ async function main() {
     process.exit(0);
   }
   
-  console.log(`📊 Session: ${sessionInfo.sessionId}`);
-  console.log(`   Tokens: ${sessionInfo.totalTokens} / ${sessionInfo.contextWindow} (${(sessionInfo.usageRatio * 100).toFixed(1)}%)`);
+  // 获取详细统计
+  const stats = await getSessionStats(sessionInfo);
   
-  if (sessionInfo.usageRatio >= threshold) {
-    console.log('\n⚠️  Context usage above threshold! Saving conversation...');
+  console.log(`📊 Session: ${sessionInfo.sessionId}`);
+  console.log(`   Tokens: ${stats.totalTokens} / ${stats.contextWindow} (${(stats.usageRatio * 100).toFixed(1)}%)`);
+  console.log(`   Messages: ${stats.totalMessages} (User: ${stats.userMessages}, Assistant: ${stats.assistantMessages})`);
+  
+  if (stats.usageRatio >= threshold) {
+    console.log('\n⚠️  Context usage above threshold!');
     
-    // 提取对话
-    const conversation = extractConversation(sessionInfo.sessionPath);
-    console.log(`📝 Extracted ${conversation.length} messages`);
+    // 构建提醒消息
+    const warningMessage = `
+⚠️ **会话上下文已达到 ${(stats.usageRatio * 100).toFixed(1)}%**
+
+**会话统计：**
+- 总 tokens: ${stats.totalTokens} / ${stats.contextWindow}
+- 输入 tokens: ${stats.inputTokens}
+- 输出 tokens: ${stats.outputTokens}
+- 消息数: ${stats.totalMessages} (用户: ${stats.userMessages}, AI: ${stats.assistantMessages})
+
+**建议：**
+- 输入 /new 创建新会话
+- 或手动保存当前会话记录
+`;
     
-    // 保存对话
-    const savedId = await saveConversation(conversation, sessionInfo.sessionId);
-    console.log(`✅ Conversation saved (ID: ${savedId})`);
-    
-    // 如果需要自动重置
-    let resetSuccess = false;
-    if (autoReset) {
-      resetSuccess = await resetSession(sessionInfo);
-    } else {
-      console.log('\n🔄 To reset session, send /reset command to the session');
-      console.log('   (Or use --reset flag to auto-reset)');
-    }
+    console.log(warningMessage);
     
     return {
-      saved: true,
-      sessionId: sessionInfo.sessionId,
-      messageCount: conversation.length,
-      savedId,
-      shouldReset: true,
-      resetSuccess
+      saved: false,
+      warning: true,
+      shouldNotify: true,
+      stats: stats,
+      message: warningMessage
     };
   } else {
     console.log('✅ Context usage below threshold, no action needed');
     return {
       saved: false,
-      usageRatio: sessionInfo.usageRatio
+      usageRatio: stats.usageRatio,
+      stats: stats
     };
   }
 }
 
 // 导出供 action 调用
-module.exports = { main, getCurrentSessionInfo, extractConversation, saveConversation, resetSession };
+module.exports = { main, getCurrentSessionInfo, extractConversation, saveConversation, getSessionStats };
 
 // CLI 入口
 if (require.main === module) {
