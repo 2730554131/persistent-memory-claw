@@ -1,0 +1,23 @@
+{
+  "name": "persistent-memory-claw",
+  "version": "1.0.0",
+  "description": "OpenClaw 持久记忆系统 - SQLite 版本",
+  "main": "scripts/memory.cjs",
+  "bin": {
+    "memory": "scripts/memory.cjs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "openclaw",
+    "memory",
+    "persistent",
+    "sqlite"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "sqlite3": "^5.1.7"
+  }
+}
