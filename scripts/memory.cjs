@@ -11,12 +11,49 @@
 const fs = require('fs');
 const path = require('path');
 
+/**
+ * 自动安装依赖 - 从 package.json 读取所有依赖并自动安装
+ */
+function ensureDependencies() {
+  const packageJsonPath = path.join(__dirname, '..', 'package.json');
+  
+  let deps = [];
+  try {
+    const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    deps = [
+      ...Object.keys(pkg.dependencies || {}),
+      ...Object.keys(pkg.devDependencies || {})
+    ];
+  } catch (e) {
+    // 如果读取失败，使用默认依赖
+    deps = ['sqlite3'];
+  }
+  
+  for (const dep of deps) {
+    try {
+      require(dep);
+    } catch (e) {
+      console.log(`Auto-installing missing dependency: ${dep}...`);
+      const { execSync } = require('child_process');
+      try {
+        execSync(`npm install ${dep}`, { stdio: 'inherit', cwd: path.join(__dirname, '..') });
+        console.log(`${dep} installed successfully`);
+      } catch (installError) {
+        console.error(`Failed to install ${dep}:`, installError.message);
+      }
+    }
+  }
+}
+
+// 自动检查并安装依赖
+ensureDependencies();
+
 // 动态加载 sqlite3
 let sqlite3;
 try {
   sqlite3 = require('sqlite3').verbose();
 } catch (e) {
-  console.error('sqlite3 not installed, run: npm install sqlite3');
+  console.error('Failed to load sqlite3 after auto-install');
   process.exit(1);
 }
 

@@ -31,6 +31,7 @@
 - **SQLite 存储** - 高效、可靠的本地数据库
 - **Skill Actions** - 可被 OpenClaw 意图路由自动调用
 - **多分类支持** - 支持不同的记忆分类
+- **自动安装依赖** - 首次使用自动安装所需依赖，无需手动 `npm install`
 
 ---
 
@@ -42,8 +43,7 @@
 git clone https://github.com/2730554131/persistent-memory-claw.git
 cd persistent-memory-claw
 
-# 安装依赖
-npm install
+# ✅ 无需手动安装依赖！首次使用时会自动安装
 ```
 
 ### 移动到 skills 目录
@@ -139,6 +139,9 @@ persistent-memory-claw/
 ---
 
 ## 📝 更新日志
+
+### v0.5.1
+- 新增自动安装依赖功能，无需手动 `npm install`
 
 ### v0.5.0
 - 升级为 SQLite 存储（支持多条记忆）
