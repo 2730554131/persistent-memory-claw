@@ -25,6 +25,7 @@
 | 保存记忆 | 保存用户想要记住的内容 |
 | 搜索记忆 | 关键词搜索 |
 | 列出记忆 | 查看所有记忆 |
+| 自动保存会话 | 当上下文达到 80% 时自动保存会话并重置 |
 
 ### 技术特性
 
@@ -74,13 +75,30 @@ node scripts/memory.cjs list
 
 ### OpenClaw Skill Actions 调用
 
-在 OpenClaw 中，这个 skill 提供三个 action：
+在 OpenClaw 中，这个 skill 提供四个 action：
 
 | Action | 说明 | 触发关键词 |
 |--------|------|------------|
 | `persistent_memory_save` | 保存记忆 | 记住、记录、保存 |
 | `persistent_memory_search` | 搜索记忆 | 搜索、找找 |
 | `persistent_memory_list` | 列出记忆 | 列出、查看记忆 |
+| `persistent_memory_auto_save` | 自动保存会话 | （需配合 heartbeat 使用） |
+
+### 自动保存会话功能
+
+当上下文使用比例达到阈值（默认 80%）时，自动保存完整会话记录并重置：
+
+```javascript
+// 参数
+{
+  threshold: 0.8,    // 触发阈值 (0-1)，默认 0.8
+  autoReset: false    // 是否自动重置，默认 false
+}
+```
+
+**配置 heartbeat 定期检查：**
+
+在 workspace 的 `HEARTBEAT.md` 中添加定时任务，定期调用 `persistent_memory_auto_save` action。
 
 ---
 
@@ -139,6 +157,9 @@ persistent-memory-claw/
 ---
 
 ## 📝 更新日志
+
+### v0.6.0
+- 新增自动保存会话功能：当上下文达到 80% 时自动保存会话并重置
 
 ### v0.5.1
 - 新增自动安装依赖功能，无需手动 `npm install`
