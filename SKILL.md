@@ -57,41 +57,46 @@ OpenClaw 持久记忆系统 - 极简版。
 {}  // 无需参数
 ```
 
-### 4. persistent_memory_auto_save
+### 4. persistent_memory_save_and_reset
 
-**自动保存并重置会话** - 当上下文使用比例达到阈值时，自动保存当前会话到记忆系统并创建新会话。
+**保存会话并新建会话** - 当上下文使用比例达到阈值时，保存当前会话到记忆并触发 /new 创建全新会话。
 
 ```javascript
 // 参数
 {
-  threshold: 0.8,    // 可选，触发阈值 (0-1)，默认 0.8 (80%)
-  autoReset: true     // 可选，是否自动创建新会话，默认 true
+  threshold: 0.8    // 可选，触发阈值 (0-1)，默认 0.8 (80%)
 }
 ```
 
-**功能说明：**
+**执行流程：**
 
 1. 检查当前会话的上下文使用比例
 2. 如果达到阈值（默认 80%）：
    - 提取当前会话的所有对话内容
-   - 自动保存到记忆系统（分类：conversation）
-   - 归档当前会话文件
-   - 创建新会话
+   - 保存到记忆系统（分类：conversation，包含时间戳）
+   - 触发 /new 命令，创建全新 sessionId
 3. 返回保存结果和新会话信息
+
+**返回结果：**
+
+```javascript
+{
+  success: true,
+  action: 'saved_and_reset',
+  message: '会话已保存到记忆系统，并创建新会话',
+  memoryId: 123,
+  oldSessionId: 'session-xxx',
+  newSessionId: 'session-yyy',
+  usageRatio: 0.85,
+  messageCount: 50
+}
+```
 
 **使用场景：**
 
 - 配置 heartbeat 定期检查上下文使用比例
 - 在 OpenClaw 压缩前自动保存会话，防止丢失重要上下文
-
-```bash
-# CLI 模式
-node scripts/auto-save.cjs 0.8 --save-reset
-
-# 参数说明：
-# 0.8 - 阈值 (80%)
-# --save-reset - 自动保存并创建新会话
-```
+- 手动调用：`persistent_memory_save_and_reset`
 
 ## 存储结构
 
