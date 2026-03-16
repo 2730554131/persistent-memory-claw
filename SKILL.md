@@ -23,7 +23,7 @@ OpenClaw 持久记忆系统 - 极简版。
 
 ## Actions
 
-这个 skill 提供三个 action，可被意图路由自动调用：
+这个 skill 提供四个 action，可被意图路由自动调用：
 
 ### 1. persistent_memory_save
 
@@ -55,6 +55,28 @@ OpenClaw 持久记忆系统 - 极简版。
 ```javascript
 // 参数
 {}  // 无需参数
+```
+
+### 4. persistent_memory_auto_save
+
+自动保存并重置会话。当上下文使用比例达到阈值时，自动保存会话并重置。
+
+```javascript
+// 参数
+{
+  threshold: 0.8,    // 可选，触发阈值 (0-1)，默认 0.8 (80%)
+  autoReset: false    // 可选，是否自动重置会话，默认 false
+}
+```
+
+**使用场景：**
+- 配置 heartbeat 定期检查上下文使用比例
+- 当达到阈值时自动保存会话历史
+- 保存后提示用户重置会话
+
+```bash
+# 定期检查（每 10 分钟）
+# 在 HEARTBEAT.md 中配置调用 persistent_memory_auto_save
 ```
 
 ## 存储结构
