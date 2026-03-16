@@ -53,25 +53,21 @@ module.exports = {
       },
       autoReset: {
         type: 'boolean',
-        default: false,
-        description: '保存后是否自动重置会话'
+        default: true,
+        description: '保存后是否自动创建新会话，默认 true'
       }
     }
   },
   async run(params) {
-    const { threshold = 0.8, autoReset = false } = params;
+    const { threshold = 0.8, autoReset = true } = params;
     
     try {
-      const result = await main();
-      
-      // 如果需要重置且 autoReset 为 true
-      if (result.shouldReset && autoReset) {
-        return {
-          ...result,
-          message: '会话已保存，需要手动发送 /reset 命令重置会话',
-          resetRequired: true
-        };
+      // 通过环境变量传递 autoReset 标志
+      if (autoReset) {
+        process.env.AUTO_RESET_SESSION = 'true';
       }
+      
+      const result = await main();
       
       return result;
     } catch (e) {

@@ -167,8 +167,63 @@ async function saveConversation(conversation, sessionId) {
   }
 }
 
+async function resetSession(sessionInfo) {
+  try {
+    // 先尝试通过 openclaw agent 发送 /new 命令
+    const sessionsDir = path.dirname(sessionInfo.sessionPath);
+    const sessionsJsonPath = path.join(sessionsDir, 'sessions.json');
+    let deliveryContext = null;
+    
+    try {
+      const sessionsJson = JSON.parse(fs.readFileSync(sessionsJsonPath, 'utf8'));
+      for (const [key, value] of Object.entries(sessionsJson)) {
+        if (value.sessionFile && value.sessionFile.includes(sessionInfo.sessionId)) {
+          deliveryContext = value.deliveryContext;
+          break;
+        }
+      }
+    } catch (e) {
+      console.log('Could not read sessions.json:', e.message);
+    }
+    
+    if (deliveryContext) {
+      const channel = deliveryContext.channel || 'feishu';
+      let to = deliveryContext.to || '';
+      to = to.replace(/^(user:|channel:)/, '');
+      
+      console.log(`\n🔄 Creating new session...`);
+      console.log(`   Channel: ${channel}, To: ${to}`);
+      
+      const { execSync } = require('child_process');
+      try {
+        // 发送 /new 命令，这会创建一个新的会话
+        execSync(`openclaw agent --channel ${channel} --to "${to}" --message "/new"`, {
+          stdio: 'inherit',
+          timeout: 30000
+        });
+        console.log('✅ New session created successfully');
+        return true;
+      } catch (e) {
+        console.log('CLI method failed:', e.message);
+      }
+    }
+    
+    // 如果 CLI 方法失败，使用文件重命名方式
+    console.log('   Falling back to file-based reset...');
+    const resetFilePath = sessionInfo.sessionPath + `.reset.${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    fs.renameSync(sessionInfo.sessionPath, resetFilePath);
+    console.log('✅ Session file renamed, new session will be created on next message');
+    return true;
+    
+  } catch (e) {
+    console.error('Error resetting session:', e.message);
+    return false;
+  }
+}
+
 async function main() {
   const threshold = parseFloat(process.argv[2]) || 0.8;
+  const autoReset = process.argv.includes('--reset') || process.env.AUTO_RESET_SESSION === 'true';
   
   console.log(`🔍 Checking session context usage (threshold: ${threshold * 100}%)...`);
   
@@ -193,15 +248,22 @@ async function main() {
     const savedId = await saveConversation(conversation, sessionInfo.sessionId);
     console.log(`✅ Conversation saved (ID: ${savedId})`);
     
-    console.log('\n🔄 To reset session, send /reset command to the session');
-    console.log('   (This tool does not auto-reset. Configure heartbeat to call this action.)');
+    // 如果需要自动重置
+    let resetSuccess = false;
+    if (autoReset) {
+      resetSuccess = await resetSession(sessionInfo);
+    } else {
+      console.log('\n🔄 To reset session, send /reset command to the session');
+      console.log('   (Or use --reset flag to auto-reset)');
+    }
     
     return {
       saved: true,
       sessionId: sessionInfo.sessionId,
       messageCount: conversation.length,
       savedId,
-      shouldReset: true
+      shouldReset: true,
+      resetSuccess
     };
   } else {
     console.log('✅ Context usage below threshold, no action needed');
@@ -213,7 +275,7 @@ async function main() {
 }
 
 // 导出供 action 调用
-module.exports = { main, getCurrentSessionInfo, extractConversation, saveConversation };
+module.exports = { main, getCurrentSessionInfo, extractConversation, saveConversation, resetSession };
 
 // CLI 入口
 if (require.main === module) {
