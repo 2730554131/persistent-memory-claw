@@ -40,7 +40,7 @@ async function list(params) {
     let results = [];
     
     if (date) {
-      // 1. 查询指定日期的记忆：memory/YYYY-MM-DD.db
+      // 1. 查询指定日期的记忆
       const dbPath = path.join(memoryDir, `${date}.db`);
       
       if (fs.existsSync(dbPath)) {
@@ -48,7 +48,7 @@ async function list(params) {
         
         const rows = await new Promise((resolve, reject) => {
           db.all(
-            'SELECT session_id, role, content, created_at FROM memories ORDER BY id',
+            'SELECT session_id, role, content, timestamp, created_at FROM memories ORDER BY timestamp',
             (err, rows) => {
               db.close();
               if (err) reject(err);
@@ -66,7 +66,7 @@ async function list(params) {
           sessions[row.session_id].push({
             role: row.role,
             content: row.content,
-            time: row.created_at
+            timestamp: row.timestamp || row.created_at
           });
         }
         
@@ -86,7 +86,7 @@ async function list(params) {
         
         const rows = await new Promise((resolve, reject) => {
           db.all(
-            'SELECT session_id, role, content, created_at FROM memories ORDER BY created_at DESC LIMIT 20',
+            'SELECT session_id, role, content, timestamp, created_at FROM memories ORDER BY timestamp DESC LIMIT 20',
             (err, rows) => {
               db.close();
               if (err) reject(err);
@@ -101,7 +101,7 @@ async function list(params) {
             sessionId: row.session_id,
             role: row.role,
             content: row.content,
-            time: row.created_at
+            timestamp: row.timestamp || row.created_at
           });
         }
       }
