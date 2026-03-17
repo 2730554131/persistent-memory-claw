@@ -10,7 +10,7 @@ metadata: {"openclaw": {"emoji": "🧠", "requires": {"bins": ["node"]}}}
 
 ## 核心功能
 
-### 1. 手动保存记忆
+### 1. 手动保存记忆 (v2.1 智能标记)
 当用户说"记住 XXX"、"保存 XXX"时：
 
 ```javascript
@@ -18,15 +18,25 @@ const { save } = require('./actions/save');
 await save({
   workspace: '{workspace}',
   content: '要记住的内容',
-  category: 'default'
+  autoTag: true  // 默认开启智能标记
 });
 ```
 
 CLI 用法：
 ```bash
+# 自动智能标记（默认）
 node actions/save.js --content "要记住的内容"
-node actions/save.js --content "重要内容" --category "work"
+
+# 指定分类
+node actions/save.js --content "任务" --category "task"
+
+# 禁用智能标记
+node actions/save.js --content "内容" --no-auto-tag
 ```
+
+**v2.1 智能标记**：
+- 自动分析内容重要性（1-10星）
+- 自动分类：task / promise / decision / normal
 
 ### 2. 手动生成摘要
 当用户说"生成摘要"、"总结"时：
@@ -105,7 +115,7 @@ CREATE TABLE memories (
 
 | 功能 | 触发关键词 |
 |------|-----------|
-| 保存记忆 | 记住、保存、记录、存一下 |
+| 保存记忆（智能标记） | 记住、保存、记录、存一下 |
 | 生成摘要 | 摘要、总结、提炼 |
 | 搜索记忆 | 搜索、查找、找一下、记得 |
 | 列出记忆 | 查看记忆、列出记忆、今天的记忆 |
