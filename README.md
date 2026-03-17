@@ -26,6 +26,7 @@
 | 混合搜索 | 关键词 + N-gram 组合搜索 |
 | 热词统计 | 统计高频词汇，按日期存储 |
 | 列出记忆 | 按日期查看历史对话 |
+| 知识管理 | 重要事件标记、经验提取、知识积累、从失败中学习 |
 
 ---
 
@@ -103,6 +104,34 @@ node actions/search.js --workspace /path/to/workspace --search-type hotwords
 node actions/search.js --workspace /path/to/workspace --search-type hotwords --date 2026-03-17
 ```
 
+### 知识管理
+
+```bash
+# 标记重要事件（1-10星）
+node actions/knowledge.js --workspace /path/to/workspace --action mark_important --content "重要内容" --importance 8
+
+# 获取重要事件（新会话优先加载）
+node actions/knowledge.js --workspace /path/to/workspace --action get_important
+
+# 提取经验
+node actions/knowledge.js --workspace /path/to/workspace --action extract_experience --content "学到的经验" --type success
+
+# 获取经验
+node actions/knowledge.js --workspace /path/to/workspace --action get_experiences
+
+# 积累知识
+node actions/knowledge.js --workspace /path/to/workspace --action add_knowledge --content "知识内容"
+
+# 获取知识（新会话优先加载）
+node actions/knowledge.js --workspace /path/to/workspace --action get_knowledge
+
+# 从失败中学习
+node actions/knowledge.js --workspace /path/to/workspace --action learn_from_failure --content "失败教训"
+
+# 获取学习记录
+node actions/knowledge.js --workspace /path/to/workspace --action get_learning
+```
+
 ### 查看记忆
 
 ```bash
@@ -154,7 +183,8 @@ persistent-memory-claw/
 ├── package.json            # 依赖配置
 ├── actions/
 │   ├── list.js           # 列出记忆
-│   └── search.js         # 搜索记忆
+│   ├── search.js         # 搜索记忆
+│   └── knowledge.js      # 知识管理
 └── hooks/
     └── auto-save/
         ├── HOOK.md       # Hook 定义
