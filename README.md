@@ -21,6 +21,7 @@
 | 功能 | 说明 |
 |------|------|
 | 自动保存会话 | OpenClaw 自动压缩前保存所有对话到 SQLite |
+| LLM 摘要生成 | 使用 OpenClaw LLM 生成会话摘要 |
 | 关键词搜索 | 精确匹配关键词 |
 | 语义(N-gram)搜索 | 基于 N-gram 的语义相似度搜索 |
 | 混合搜索 | 关键词 + N-gram 组合搜索 |
@@ -69,6 +70,33 @@ openclaw hooks enable persistent-memory-auto-save
 ---
 
 ## 使用方法
+
+### LLM 摘要生成
+
+```bash
+# 生成今天和昨天的对话摘要
+node actions/summarize.js --workspace /path/to/workspace
+
+# 生成指定日期的摘要
+node actions/summarize.js --workspace /path/to/workspace --date 2026-03-17
+
+# 指定 Gateway
+node actions/summarize.js --workspace /path/to/workspace --gateway-url http://localhost:8080 --token your-token
+```
+
+**前提条件：**
+- 需启用 Gateway 的 chatCompletions：
+```json
+{
+  "gateway": {
+    "http": {
+      "endpoints": {
+        "chatCompletions": { "enabled": true }
+      }
+    }
+  }
+}
+```
 
 ### 关键词搜索
 
@@ -184,7 +212,8 @@ persistent-memory-claw/
 ├── actions/
 │   ├── list.js           # 列出记忆
 │   ├── search.js         # 搜索记忆
-│   └── knowledge.js      # 知识管理
+│   ├── knowledge.js      # 知识管理
+│   └── summarize.js      # LLM 摘要生成
 └── hooks/
     └── auto-save/
         ├── HOOK.md       # Hook 定义

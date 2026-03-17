@@ -28,7 +28,40 @@ await search({ workspace: '{workspace}', query: '密码', searchType: 'hybrid' }
 await search({ workspace: '{workspace}', searchType: 'hotwords' });
 ```
 
-### 3. 列出记忆
+### 3. LLM 摘要生成
+当用户说"生成摘要"、"总结"、"提炼"时：
+
+```javascript
+const { summarize } = require('./actions/summarize');
+await summarize({ 
+  workspace: '{workspace}', 
+  date: '2026-03-17',
+  gatewayUrl: 'http://localhost:8080',
+  token: 'your-token'
+});
+```
+
+CLI 用法：
+```bash
+# 生成摘要
+node actions/summarize.js --workspace /path/to/workspace
+node actions/summarize.js --workspace /path/to/workspace --date 2026-03-17
+```
+
+**前提条件：** 需启用 Gateway 的 chatCompletions：
+```json
+{
+  "gateway": {
+    "http": {
+      "endpoints": {
+        "chatCompletions": { "enabled": true }
+      }
+    }
+  }
+}
+```
+
+### 4. 列出记忆
 当用户说"查看记忆"、"列出记忆"时：
 
 ```javascript
@@ -178,10 +211,21 @@ CREATE TABLE learning (
 );
 ```
 
+### summaries 表（LLM 摘要）
+```sql
+CREATE TABLE summaries (
+  id INTEGER PRIMARY KEY,
+  content TEXT,
+  key_info TEXT,
+  created_at TIMESTAMP
+);
+```
+
 ## 意图识别
 
 | 功能 | 触发关键词 |
 |------|-----------|
+| LLM 摘要 | 摘要、总结、提炼、生成摘要 |
 | 搜索记忆 | 搜索、查找、找一下、记得 |
 | N-gram搜索 | N-gram、语义搜索、相似 |
 | 混合搜索 | 混合搜索、综合搜索 |
