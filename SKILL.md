@@ -62,7 +62,34 @@ node actions/ask.js --question "之前说的密码" --date 2026-03-17
 - 基于记忆的智能问答
 - 自动检索相关记忆
 - LLM 生成自然语言答案
-当用户说"生成摘要"、"总结"时：
+
+### 3. 自我反思 (v2.3)
+当用户说"反思"、"回顾"、"总结经验"时：
+
+```javascript
+const { reflect } = require('./actions/reflect');
+await reflect({
+  workspace: '{workspace}',
+  days: 7
+});
+```
+
+CLI 用法：
+```bash
+# 自我反思（最近7天）
+node actions/reflect.js
+
+# 回顾最近30天
+node actions/reflect.js --days 30
+```
+
+**v2.3 自我反思**：
+- 定期回顾近期记忆
+- 提取经验教训
+- 总结主要工作
+- 识别待完成任务
+
+### 4. 生成摘要
 
 ```javascript
 const { summarize } = require('./actions/summarize');
@@ -140,6 +167,7 @@ CREATE TABLE memories (
 |------|-----------|
 | 保存记忆（智能标记） | 记住、保存、记录、存一下 |
 | RAG 问答 | 之前、记得、聊过、问 |
+| 自我反思 | 反思、回顾、总结经验 |
 | 生成摘要 | 摘要、总结、提炼 |
 | 搜索记忆 | 搜索、查找、找一下、记得 |
 | 列出记忆 | 查看记忆、列出记忆、今天的记忆 |
