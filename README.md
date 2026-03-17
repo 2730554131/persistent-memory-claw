@@ -15,6 +15,7 @@
 | 功能 | 说明 |
 |------|------|
 | 手动保存记忆 | 用户主动保存，v2.1 支持智能标记重要性 |
+| RAG 问答 | v2.2 基于记忆的智能问答 |
 | 手动生成摘要 | 用户手动生成对话摘要 |
 | 搜索记忆 | 关键词搜索历史对话 |
 | 列出记忆 | 按日期查看历史对话 |
@@ -70,6 +71,21 @@ node actions/save.js --workspace /path/to/workspace --content "内容" --date 20
 - 自动分析内容重要性（1-10星）
 - 自动分类：task(任务) / promise(承诺) / decision(决定) / normal(普通)
 
+### RAG 问答
+
+```bash
+# 智能问答
+node actions/ask.js --workspace /path/to/workspace --question "之前我们聊了什么？"
+
+# 指定日期范围
+node actions/ask.js --workspace /path/to/workspace --question "之前说的密码是什么" --date 2026-03-17
+```
+
+**v2.2 RAG 问答**：
+- 基于记忆的智能问答
+- 自动检索相关记忆
+- LLM 生成自然语言答案
+
 ### 生成摘要
 
 ```bash
@@ -111,6 +127,7 @@ persistent-memory-claw/
 ├── package.json            # 依赖配置
 └── actions/
     ├── save.js           # 手动保存（v2.1 智能标记）
+    ├── ask.js            # RAG 问答（v2.2）
     ├── list.js           # 列出记忆
     ├── search.js         # 搜索记忆
     └── summarize.js      # 手动生成摘要

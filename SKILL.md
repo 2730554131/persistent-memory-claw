@@ -38,7 +38,30 @@ node actions/save.js --content "内容" --no-auto-tag
 - 自动分析内容重要性（1-10星）
 - 自动分类：task / promise / decision / normal
 
-### 2. 手动生成摘要
+### 2. RAG 问答 (v2.2)
+当用户问"之前聊过什么？"、"还记得吗？"时：
+
+```javascript
+const { ask } = require('./actions/ask');
+await ask({
+  workspace: '{workspace}',
+  question: '之前我们聊了什么？'
+});
+```
+
+CLI 用法：
+```bash
+# 智能问答
+node actions/ask.js --question "之前我们聊了什么？"
+
+# 指定日期
+node actions/ask.js --question "之前说的密码" --date 2026-03-17
+```
+
+**v2.2 RAG 问答**：
+- 基于记忆的智能问答
+- 自动检索相关记忆
+- LLM 生成自然语言答案
 当用户说"生成摘要"、"总结"时：
 
 ```javascript
@@ -116,6 +139,7 @@ CREATE TABLE memories (
 | 功能 | 触发关键词 |
 |------|-----------|
 | 保存记忆（智能标记） | 记住、保存、记录、存一下 |
+| RAG 问答 | 之前、记得、聊过、问 |
 | 生成摘要 | 摘要、总结、提炼 |
 | 搜索记忆 | 搜索、查找、找一下、记得 |
 | 列出记忆 | 查看记忆、列出记忆、今天的记忆 |
