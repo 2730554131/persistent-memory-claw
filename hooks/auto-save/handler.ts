@@ -16,7 +16,8 @@ interface HookEvent {
 
 /**
  * 自动保存 Hook
- * 在会话压缩前保存会话内容到 SQLite
+ * 在会话压缩前按日期保存会话到 SQLite
+ * 存储路径：memory/YYYY-MM-DD.db
  */
 const handler = async (event: HookEvent): Promise<void> => {
   // 只处理 session:compact:before 事件
@@ -34,50 +35,70 @@ const handler = async (event: HookEvent): Promise<void> => {
   }
 
   try {
-    // 读取会话 transcript
+    // 1. 读取会话 transcript
     const transcript = fs.readFileSync(sessionFile, 'utf-8');
-    const lines = transcript.trim().split('\n');
     
-    // 取最近的消息（最后 50 行）
-    const recentMessages = lines.slice(-50).join('\n');
+    // 2. 解析对话内容（按行解析 JSONL）
+    const lines = transcript.trim().split('\n').filter(line => line.trim());
+    const messages = [];
+    
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.role && entry.content) {
+          messages.push({
+            role: entry.role,
+            content: entry.content.substring(0, 2000) // 限制长度
+          });
+        }
+      } catch {}
+    }
 
-    // 创建 memory 目录
+    // 3. 获取当前日期作为存储键
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    // 4. 创建 memory 目录
     const memoryDir = path.join(workspaceDir, 'memory');
     if (!fs.existsSync(memoryDir)) {
       fs.mkdirSync(memoryDir, { recursive: true });
     }
 
-    // 数据库路径
-    const dbPath = path.join(memoryDir, `${sessionId}.db`);
+    // 5. 数据库路径：memory/YYYY-MM-DD.db
+    const dbPath = path.join(memoryDir, `${dateStr}.db`);
 
-    // 使用 SQLite 保存
+    // 6. 使用 SQLite 保存
     const sqlite3 = require('sqlite3').verbose();
     const db = new sqlite3.Database(dbPath);
 
-    // 创建表
+    // 7. 创建表（按会话存储）
     db.serialize(() => {
       db.run(`
         CREATE TABLE IF NOT EXISTS memories (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id TEXT NOT NULL,
+          role TEXT NOT NULL,
           content TEXT NOT NULL,
-          category TEXT DEFAULT 'conversation',
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
 
-      // 插入会话内容
-      db.run(
-        'INSERT INTO memories (content, category) VALUES (?, ?)',
-        [JSON.stringify({
-          sessionId,
-          savedAt: new Date().toISOString(),
-          transcript: recentMessages
-        }), 'conversation']
+      db.run(`CREATE INDEX IF NOT EXISTS idx_session ON memories(session_id)`);
+      db.run(`CREATE INDEX IF NOT EXISTS idx_created ON memories(created_at)`);
+
+      // 8. 插入每条消息
+      const stmt = db.prepare(
+        'INSERT INTO memories (session_id, role, content) VALUES (?, ?, ?)'
       );
+      
+      for (const msg of messages) {
+        stmt.run(sessionId, msg.role, msg.content);
+      }
+      stmt.finalize();
     });
 
     db.close(() => {
-      console.log(`[persistent-memory-auto-save] 会话已保存到 ${dbPath}`);
+      console.log(`[persistent-memory-auto-save] 已保存 ${messages.length} 条消息到 ${dbPath}`);
     });
 
   } catch (error) {
