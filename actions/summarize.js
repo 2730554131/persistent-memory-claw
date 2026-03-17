@@ -1,10 +1,43 @@
 /**
  * Persistent Memory - Summarize Action
- * 使用 subagent 调用 LLM 生成摘要
+ * 手动生成摘要
+ * 
+ * 触发关键词：摘要、总结
  */
 
 const fs = require('fs');
 const path = require('path');
+
+/**
+ * 本地简单摘要
+ */
+function generateLocalSummary(conversationText: string): string {
+  const lines = conversationText.split('\n').filter(l => l.trim());
+  const recent = lines.slice(-10);
+  
+  let summary = '## 对话摘要\n\n';
+  
+  // 提取用户问题
+  const userQuestions = recent
+    .filter(l => l.startsWith('用户:') || l.startsWith('user:'))
+    .slice(-3);
+  
+  if (userQuestions.length > 0) {
+    summary += '### 用户问题\n';
+    for (const q of userQuestions) {
+      summary += `- ${q.replace(/^(用户:|user:)/, '').substring(0, 100)}\n`;
+    }
+    summary += '\n';
+  }
+  
+  // 简单统计
+  const userCount = recent.filter(l => l.startsWith('用户:') || l.startsWith('user:')).length;
+  const aiCount = recent.filter(l => l.startsWith('AI:') || l.startsWith('assistant:')).length;
+  
+  summary += `### 统计\n- 用户消息: ${userCount}\n- AI 回复: ${aiCount}\n`;
+  
+  return summary;
+}
 
 /**
  * 解析命令行参数
@@ -13,8 +46,7 @@ function parseArgs() {
   const args = process.argv.slice(2);
   const result = {
     workspace: process.env.OPENCLAW_WORKSPACE || process.cwd(),
-    date: null,
-    sessionId: null
+    date: null
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -31,74 +63,7 @@ function parseArgs() {
 }
 
 /**
- * 使用 subagent 生成摘要
- */
-async function generateSummary(conversationText) {
-  return new Promise((resolve, reject) => {
-    // 使用 spawn 来调用 subagent
-    const { spawn } = require('child_process');
-    
-    const prompt = `请分析以下对话，生成一个简洁的摘要（100字以内），包含：
-1. 对话主题
-2. 关键信息
-
-对话内容：
-${conversationText}`;
-
-    // 通过 openclaw CLI 调用 subagent
-    const proc = spawn('npx', [
-      'openclaw',
-      'agent',
-      '--prompt', prompt,
-      '--model', 'minimax-portal/MiniMax-M2.5'
-    ], {
-      cwd: process.cwd(),
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve(stdout.trim());
-      } else {
-        // 如果CLI不可用，返回简化的本地摘要
-        resolve(generateLocalSummary(conversationText));
-      }
-    });
-  });
-}
-
-/**
- * 本地简单摘要（备用方案）
- */
-function generateLocalSummary(conversationText) {
-  const lines = conversationText.split('\n').filter(l => l.trim());
-  
-  // 提取用户和AI的最后几轮对话
-  const recent = lines.slice(-6);
-  
-  let summary = '对话摘要：\n';
-  for (const line of recent) {
-    if (line.startsWith('用户:') || line.startsWith('user:')) {
-      summary += '用户: ' + line.replace(/^(用户:|user:)/, '').substring(0, 50) + '...\n';
-    }
-  }
-  
-  return summary;
-}
-
-/**
- * 主函数
+ * 手动生成摘要
  */
 async function main() {
   const options = parseArgs();
@@ -115,7 +80,7 @@ async function main() {
   if (options.date) {
     const dbPath = path.join(memoryDir, `${options.date}.db`);
     if (fs.existsSync(dbPath)) {
-      dbFiles.push(dbPath);
+      dbFiles.push({ file: dbPath, date: options.date });
     }
   } else {
     // 处理今天和昨天的文件
@@ -125,7 +90,7 @@ async function main() {
     for (const date of [today, yesterday]) {
       const dbPath = path.join(memoryDir, `${date}.db`);
       if (fs.existsSync(dbPath)) {
-        dbFiles.push(dbPath);
+        dbFiles.push({ file: dbPath, date });
       }
     }
   }
@@ -138,87 +103,44 @@ async function main() {
   const sqlite3 = require('sqlite3').verbose();
   
   // 读取对话内容
-  let allMessages = [];
+  let allContent = '';
   
-  for (const dbPath of dbFiles) {
-    const db = new sqlite3.Database(dbPath);
+  for (const { file, date } of dbFiles) {
+    const db = new sqlite3.Database(file);
     
     const rows = await new Promise((resolve, reject) => {
-      db.all('SELECT session_id, role, content, timestamp FROM memories ORDER BY timestamp', (err, rows) => {
+      db.all('SELECT content FROM memories ORDER BY id', (err, rows) => {
         db.close();
         if (err) reject(err);
         else resolve(rows);
       });
     });
     
-    allMessages = allMessages.concat(rows);
+    for (const row of rows) {
+      allContent += `用户: ${row.content}\n\n`;
+    }
   }
 
-  if (allMessages.length === 0) {
+  if (!allContent) {
     console.log(JSON.stringify({ success: false, error: '暂无对话内容' }));
     return;
   }
 
-  // 限制消息数量（取最近的）
-  const recentMessages = allMessages.slice(-50);
+  // 生成摘要
+  const summary = generateLocalSummary(allContent);
+
+  // 保存摘要到文件
+  const dateStr = options.date || new Date().toISOString().split('T')[0];
+  const summaryPath = path.join(memoryDir, `${dateStr}-summary.md`);
   
-  // 构建对话文本
-  let conversationText = '';
-  for (const msg of recentMessages) {
-    const role = msg.role === 'user' ? '用户' : 'AI';
-    conversationText += `${role}: ${msg.content}\n\n`;
-  }
+  fs.writeFileSync(summaryPath, summary, 'utf-8');
 
-  try {
-    // 使用 subagent 生成摘要
-    let summary;
-    try {
-      summary = await generateSummary(conversationText);
-    } catch (e) {
-      // 如果 subagent 不可用，使用本地摘要
-      summary = generateLocalSummary(conversationText);
-    }
-
-    // 保存摘要到数据库
-    const dbPath = path.join(memoryDir, `${options.date || new Date().toISOString().split('T')[0]}.db`);
-    const db = new sqlite3.Database(dbPath);
-
-    await new Promise((resolve) => {
-      db.run(`
-        CREATE TABLE IF NOT EXISTS summaries (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          content TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `, resolve);
-    });
-
-    await new Promise((resolve, reject) => {
-      db.run(
-        'INSERT INTO summaries (content) VALUES (?)',
-        [summary],
-        function(err) {
-          if (err) reject(err);
-          else resolve(this.lastID);
-        }
-      );
-    });
-
-    db.close();
-
-    console.log(JSON.stringify({
-      success: true,
-      summary,
-      messageCount: recentMessages.length,
-      message: '摘要生成成功'
-    }));
-
-  } catch (error) {
-    console.log(JSON.stringify({
-      success: false,
-      error: error.message
-    }));
-  }
+  console.log(JSON.stringify({
+    success: true,
+    summary,
+    savedTo: summaryPath,
+    message: '摘要已生成'
+  }));
 }
 
 main();

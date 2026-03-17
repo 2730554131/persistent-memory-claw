@@ -1,6 +1,6 @@
 ---
 name: persistent-memory-claw
-description: "跨会话持久记忆系统：为 OpenClaw agent 提供持久记忆能力。使用 SQLite 存储，按日期保存对话，支持增量保存。自动保存通过 Hook 实现，支持 LLM 摘要生成。"
+description: "跨会话持久记忆系统：为 OpenClaw agent 提供持久记忆能力。使用 SQLite 存储，按日期保存，手动触发更可控。"
 metadata: {"openclaw": {"emoji": "🧠", "requires": {"bins": ["node"]}}}
 ---
 
@@ -10,15 +10,42 @@ metadata: {"openclaw": {"emoji": "🧠", "requires": {"bins": ["node"]}}}
 
 ## 核心功能
 
-### 1. 自动保存会话
-当 OpenClaw 会话即将压缩时，自动保存所有对话：
+### 1. 手动保存记忆
+当用户说"记住 XXX"、"保存 XXX"时：
 
-- 存储路径：`{workspace}/memory/{YYYY-MM-DD}.db`
-- 增量保存：多次压缩只保存新增消息
-- 元数据记录：记录每个 session 保存位置，避免重复
-- **自动摘要**：保存时自动生成 LLM 摘要
+```javascript
+const { save } = require('./actions/save');
+await save({
+  workspace: '{workspace}',
+  content: '要记住的内容',
+  category: 'default'
+});
+```
 
-### 2. 搜索记忆
+CLI 用法：
+```bash
+node actions/save.js --content "要记住的内容"
+node actions/save.js --content "重要内容" --category "work"
+```
+
+### 2. 手动生成摘要
+当用户说"生成摘要"、"总结"时：
+
+```javascript
+const { summarize } = require('./actions/summarize');
+await summarize({
+  workspace: '{workspace}',
+  date: '2026-03-17'
+});
+```
+
+CLI 用法：
+```bash
+node actions/summarize.js
+node actions/summarize.js --date 2026-03-17
+```
+
+### 3. 搜索记忆
 当用户说"搜索 XXX"、"查找 XXX"时：
 
 ```javascript
@@ -26,7 +53,7 @@ const { search } = require('./actions/search');
 await search({
   workspace: '{workspace}',
   query: '关键词',
-  date: '2026-03-17'  // 可选
+  date: '2026-03-17'
 });
 ```
 
@@ -36,14 +63,14 @@ node actions/search.js --query "关键词"
 node actions/search.js --query "关键词" --date 2026-03-17
 ```
 
-### 3. 列出记忆
+### 4. 列出记忆
 当用户说"查看记忆"、"列出记忆"时：
 
 ```javascript
 const { list } = require('./actions/list');
 await list({
   workspace: '{workspace}',
-  date: '2026-03-17'  // 可选
+  date: '2026-03-17'
 });
 ```
 
@@ -53,40 +80,24 @@ node actions/list.js
 node actions/list.js --date 2026-03-17
 ```
 
-**注意**：摘要会在每次自动保存时自动生成，可在 list 中查看。
-
 ## 存储结构
 
 ```
 {workspace}/memory/
-├── 2026-03-17.db   ← 3月17日的对话
-├── 2026-03-16.db   ← 3月16日的对话
-└── 2026-03-15.db   ← 3月15日的对话
+├── 2026-03-17.db     # 3月17日的记忆
+├── 2026-03-16.db     # 3月16日的记忆
+├── 2026-03-17-summary.md  # 摘要文件
+└── ...
 ```
 
 ## SQLite 表结构
 
-### memories 表
 ```sql
 CREATE TABLE memories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  session_id TEXT NOT NULL,
-  role TEXT NOT NULL,
   content TEXT NOT NULL,
-  timestamp TEXT,
+  category TEXT DEFAULT 'default',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_session ON memories(session_id);
-CREATE INDEX idx_timestamp ON memories(timestamp);
-```
-
-### meta 表（记录保存位置）
-```sql
-CREATE TABLE meta (
-  session_id TEXT PRIMARY KEY,
-  last_line_index INTEGER DEFAULT 0,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
@@ -94,26 +105,10 @@ CREATE TABLE meta (
 
 | 功能 | 触发关键词 |
 |------|-----------|
+| 保存记忆 | 记住、保存、记录、存一下 |
+| 生成摘要 | 摘要、总结、提炼 |
 | 搜索记忆 | 搜索、查找、找一下、记得 |
-| 查看记忆 | 查看记忆、列出记忆、今天的记忆 |
-| 按日期查询 | 2026年3月17日、昨天、上周 |
-
-## 自动保存 Hook
-
-### 首次启用（一次性操作）
-```bash
-openclaw hooks enable persistent-memory-auto-save
-```
-
-### 检查状态
-```bash
-openclaw hooks list
-```
-
-### 禁用
-```bash
-openclaw hooks disable persistent-memory-auto-save
-```
+| 列出记忆 | 查看记忆、列出记忆、今天的记忆 |
 
 ## 依赖
 
