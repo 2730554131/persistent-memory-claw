@@ -201,6 +201,18 @@ async function saveReflection(workspace, reflection) {
 
   await new Promise((resolve) => {
     db.serialize(() => {
+      // 创建 memories 表（如果不存在）
+      db.run(`
+        CREATE TABLE IF NOT EXISTS memories (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          content TEXT NOT NULL,
+          category TEXT DEFAULT 'normal',
+          importance INTEGER DEFAULT 5,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
+      // 创建 reflections 表
       db.run(`
         CREATE TABLE IF NOT EXISTS reflections (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
