@@ -107,6 +107,35 @@ CREATE TABLE memories (
 | 搜索记忆 | 搜索、查找、找一下、记得、之前说、刚才说 |
 | 列出记忆 | 列出、查看、看看、显示 |
 
+## 自动保存会话（Hook 方式）
+
+### 启用自动保存 Hook
+
+首次使用需要运行以下命令启用自动保存功能：
+
+```bash
+# 启用自动保存 Hook
+openclaw hooks enable persistent-memory-auto-save
+```
+
+**说明**：
+- 启用后，当 OpenClaw 会话即将进行压缩时（context 接近满时），会自动保存会话内容到 SQLite 数据库
+- 这是**一次性操作**，启用后会一直生效
+
+### 检查 Hook 状态
+
+```bash
+# 查看 Hook 列表
+openclaw hooks list
+```
+
+### 禁用自动保存
+
+```bash
+# 禁用自动保存 Hook
+openclaw hooks disable persistent-memory-auto-save
+```
+
 ## 依赖
 
 - Node.js
