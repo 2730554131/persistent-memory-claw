@@ -18,7 +18,7 @@ interface HookEvent {
  * 自动保存 Hook
  * 在会话压缩前保存所有对话到 SQLite
  * 存储路径：memory/YYYY-MM-DD.db
- * 同一天多次压缩时自动追加，不会覆盖
+ * 支持会话多次压缩，每次只保存新增消息
  */
 const handler = async (event: HookEvent): Promise<void> => {
   // 只处理 session:compact:before 事件
@@ -36,14 +36,74 @@ const handler = async (event: HookEvent): Promise<void> => {
   }
 
   try {
-    // 1. 读取会话 transcript（全部内容，不限制行数）
+    // 1. 读取会话 transcript（全部内容）
     const transcript = fs.readFileSync(sessionFile, 'utf-8');
     const lines = transcript.trim().split('\n').filter(line => line.trim());
     
-    // 2. 解析每条消息（包含时间戳）
-    const messages = [];
+    // 2. 获取当前日期
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
     
-    for (const line of lines) {
+    // 3. 创建 memory 目录
+    const memoryDir = path.join(workspaceDir, 'memory');
+    if (!fs.existsSync(memoryDir)) {
+      fs.mkdirSync(memoryDir, { recursive: true });
+    }
+
+    // 4. 数据库路径：memory/YYYY-MM-DD.db
+    const dbPath = path.join(memoryDir, `${dateStr}.db`);
+
+    const sqlite3 = require('sqlite3').verbose();
+    const db = new sqlite3.Database(dbPath);
+
+    // 5. 创建表（如果不存在）
+    await new Promise<void>((resolve) => {
+      db.serialize(() => {
+        db.run(`
+          CREATE TABLE IF NOT EXISTS memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            timestamp TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        
+        db.run(`CREATE INDEX IF NOT EXISTS idx_session ON memories(session_id)`);
+        db.run(`CREATE INDEX IF NOT EXISTS idx_timestamp ON memories(timestamp)`);
+        
+        // 创建元数据表，记录每个 session 保存到第几行
+        db.run(`
+          CREATE TABLE IF NOT EXISTS meta (
+            session_id TEXT PRIMARY KEY,
+            last_line_index INTEGER DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        
+        resolve();
+      });
+    });
+
+    // 6. 获取上次保存到的行号
+    const lastLineIndex = await new Promise<number>((resolve) => {
+      db.get(
+        'SELECT last_line_index FROM meta WHERE session_id = ?',
+        [sessionId],
+        (err, row: any) => {
+          resolve(row ? row.last_line_index : 0);
+        }
+      );
+    });
+
+    console.log(`[persistent-memory-auto-save] session ${sessionId} 上次保存到第 ${lastLineIndex} 行`);
+
+    // 7. 从上次结束的位置继续解析新消息
+    const newMessages = [];
+    
+    for (let i = lastLineIndex; i < lines.length; i++) {
+      const line = lines[i];
       try {
         const entry = JSON.parse(line);
         
@@ -58,13 +118,13 @@ const handler = async (event: HookEvent): Promise<void> => {
             textContent = msg.content
               .map((c: any) => c.text || '')
               .join('')
-              .substring(0, 4000); // 每条消息限制 4000 字符
+              .substring(0, 4000);
           } else if (typeof msg.content === 'string') {
             textContent = msg.content.substring(0, 4000);
           }
           
           if (textContent) {
-            messages.push({
+            newMessages.push({
               role: msg.role,
               content: textContent,
               timestamp: msgTime
@@ -74,75 +134,35 @@ const handler = async (event: HookEvent): Promise<void> => {
       } catch {}
     }
 
-    if (messages.length === 0) {
-      console.log('[persistent-memory-auto-save] 无消息可保存');
+    if (newMessages.length === 0) {
+      console.log('[persistent-memory-auto-save] 无新消息可保存');
+      db.close();
       return;
     }
 
-    console.log(`[persistent-memory-auto-save] 解析到 ${messages.length} 条消息`);
+    console.log(`[persistent-memory-auto-save] 发现 ${newMessages.length} 条新消息`);
 
-    // 3. 获取当前日期
-    const now = new Date();
-    const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
-    
-    // 4. 创建 memory 目录
-    const memoryDir = path.join(workspaceDir, 'memory');
-    if (!fs.existsSync(memoryDir)) {
-      fs.mkdirSync(memoryDir, { recursive: true });
-    }
-
-    // 5. 数据库路径：memory/YYYY-MM-DD.db
-    const dbPath = path.join(memoryDir, `${dateStr}.db`);
-
-    // 6. 使用 SQLite 保存（追加模式）
-    const sqlite3 = require('sqlite3').verbose();
-    const db = new sqlite3.Database(dbPath);
-
-    // 7. 创建表
-    db.serialize(() => {
-      db.run(`
-        CREATE TABLE IF NOT EXISTS memories (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          session_id TEXT NOT NULL,
-          role TEXT NOT NULL,
-          content TEXT NOT NULL,
-          timestamp TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-
-      db.run(`CREATE INDEX IF NOT EXISTS idx_session ON memories(session_id)`);
-      db.run(`CREATE INDEX IF NOT EXISTS idx_timestamp ON memories(timestamp)`);
-
-      // 8. 检查是否已存在相同 sessionId 的记录
-      // 如果存在则跳过，避免重复存储
-      const existingCount = await new Promise<number>((resolve) => {
-        db.get(
-          'SELECT COUNT(*) as count FROM memories WHERE session_id = ?',
-          [sessionId],
-          (err, row: any) => {
-            resolve(row ? row.count : 0);
-          }
+    // 8. 插入新消息
+    await new Promise<void>((resolve) => {
+      db.serialize(() => {
+        const stmt = db.prepare(
+          'INSERT INTO memories (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)'
         );
+        
+        for (const msg of newMessages) {
+          stmt.run(sessionId, msg.role, msg.content, msg.timestamp);
+        }
+        stmt.finalize();
+
+        // 9. 更新元数据，记录当前保存到的行号
+        db.run(
+          'INSERT OR REPLACE INTO meta (session_id, last_line_index, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
+          [sessionId, lines.length]
+        );
+
+        console.log(`[persistent-memory-auto-save] 已追加 ${newMessages.length} 条消息`);
+        resolve();
       });
-
-      if (existingCount > 0) {
-        console.log(`[persistent-memory-auto-save] session ${sessionId} 已存在，跳过`);
-        db.close();
-        return;
-      }
-
-      // 9. 插入所有消息（追加模式，不会覆盖原有数据）
-      const stmt = db.prepare(
-        'INSERT INTO memories (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)'
-      );
-      
-      for (const msg of messages) {
-        stmt.run(sessionId, msg.role, msg.content, msg.timestamp);
-      }
-      stmt.finalize();
-
-      console.log(`[persistent-memory-auto-save] 已追加 ${messages.length} 条消息到 ${dbPath}`);
     });
 
     db.close();
