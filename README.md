@@ -20,19 +20,17 @@
 
 | 功能 | 说明 |
 |------|------|
-| 保存记忆 | 保存用户想要记住的内容 |
-| 搜索记忆 | 关键词搜索 |
-| 列出记忆 | 查看所有记忆 |
-| 自动保存会话 | 当上下文达到 80% 时自动保存会话并重置 |
+| 自动保存会话 | OpenClaw 自动压缩前保存所有对话到 SQLite |
+| 列出记忆 | 按日期查看历史对话 |
 
 ---
 
 ## 特性
 
 - **SQLite 存储** - 高效、可靠的本地数据库
-- **Skill Actions** - 可被 OpenClaw 意图路由自动调用
-- **多分类支持** - 支持不同的记忆分类
-- **自动安装依赖** - 首次使用自动安装所需依赖
+- **Hook 机制** - 监听 OpenClaw 压缩事件自动保存
+- **按日期存储** - 每天的对话单独存储
+- **增量保存** - 多次压缩只保存新增消息，不重复
 
 ---
 
@@ -45,7 +43,7 @@ git clone https://github.com/2730554131/persistent-memory-claw.git
 # 进入目录
 cd persistent-memory-claw
 
-# ✅ 无需手动安装依赖！首次使用时会自动安装
+# 无需手动安装依赖！首次使用时会自动安装
 
 # 移动到你的 OpenClaw workspace skills 目录
 mv persistent-memory-claw /path/to/your-workspace/skills/
@@ -56,74 +54,56 @@ openclaw gateway restart
 
 ---
 
-## 使用方法
-
-### CLI 模式
+## 启用自动保存
 
 ```bash
-# 设置工作目录（可选，默认当前目录）
-export OPENCLAW_WORKSPACE=/path/to/workspace
-
-# 保存记忆
-node scripts/memory.cjs save knowledgeBase "要记住的内容"
-
-# 搜索记忆
-node scripts/memory.cjs search 关键词
-
-# 列出记忆
-node scripts/memory.cjs list
+# 启用 Hook
+openclaw hooks enable persistent-memory-auto-save
 ```
-
-### OpenClaw Skill Actions
-
-在 OpenClaw 中，这个 skill 提供四个 action：
-
-| Action | 说明 | 触发关键词 |
-|--------|------|-----------|
-| persistent_memory_save | 保存记忆 | 记住、记录、保存 |
-| persistent_memory_search | 搜索记忆 | 搜索、找找 |
-| persistent_memory_list | 列出记忆 | 列出、查看记忆 |
-| persistent_memory_auto_save | 自动保存会话 | （需配合 heartbeat 使用） |
 
 ---
 
-## 自动保存会话
+## 使用方法
 
-当上下文使用比例达到阈值（默认 80%）时，自动保存完整会话记录并重置：
+### 查看记忆
 
-**参数：**
+```bash
+# 列出今天的所有对话
+node actions/list.js --workspace /path/to/workspace
 
-```javascript
-{
-  threshold: 0.8,  // 触发阈值 (0-1)，默认 0.8
-  autoReset: true   // 是否自动创建新会话，默认 true
-}
+# 查看指定日期的记忆
+node actions/list.js --workspace /path/to/workspace --date 2026-03-17
 ```
+
+---
+
+## 自动保存机制
 
 **工作流程：**
 
-1. 检查当前会话的上下文使用比例
-2. 如果达到阈值（默认 80%）：
-   - 提取当前会话的所有对话内容
-   - 自动保存到记忆系统（分类：conversation，包含时间戳）
-   - 归档当前会话文件
-   - 创建新会话
-3. 返回保存结果和新会话信息
-
-**使用方式：**
-
-```bash
-# CLI 模式
-node scripts/memory.cjs auto-save 0.8 --save-reset
-
-# 参数说明：
-# 0.8 - 阈值 (80%)
-# --save-reset - 自动保存并创建新会话
+```
+用户会话进行中...
+    ↓
+OpenClaw 检测到上下文即将压缩
+    ↓
+触发 session:compact:before 事件
+    ↓
+Hook 执行：
+  1. 读取 transcript 全部内容
+  2. 从上次保存的位置继续读取
+  3. 增量保存新消息到 SQLite
+  4. 更新 meta 表记录位置
+    ↓
+OpenClaw 执行压缩
+    ↓
+用户继续新会话（对话已保存）
 ```
 
-**配置 heartbeat 定期检查：**
+**增量保存说明：**
 
-在 workspace 的 HEARTBEAT.md 中添加定时任务，定期调用 persistent_memory_auto_save action。
+- 同一个会话多次压缩时，只保存新增的对话
+- meta 表记录每个 session 保存到的行号
+- 避免重复存储
 
 ---
 
@@ -134,12 +114,12 @@ persistent-memory-claw/
 ├── README.md               # 文档
 ├── SKILL.md                # OpenClaw Skill 定义
 ├── package.json            # 依赖配置
-├── actions/                # Skill Actions
-│   ├── save.js            # 保存记忆
-│   ├── search.js          # 搜索记忆
-│   └── list.js            # 列出记忆
-└── scripts/
-    └── memory.cjs         # 核心库
+├── actions/
+│   └── list.js           # 列出记忆
+└── hooks/
+    └── auto-save/
+        ├── HOOK.md       # Hook 定义
+        └── handler.ts     # 自动保存逻辑
 ```
 
 ---
@@ -147,12 +127,41 @@ persistent-memory-claw/
 ## 存储结构
 
 ```
-{workspace}/
-└── memory/
-    └── {sessionId}.db     # SQLite 数据库
+{workspace}/memory/
+├── 2026-03-17.db     # 3月17日的对话
+├── 2026-03-16.db     # 3月16日的对话
+└── 2026-03-15.db     # 3月15日的对话
 ```
 
-每个会话对应一个独立的 SQLite 数据库文件，通过 workspace + sessionId 实现多 Agent 记忆隔离。
+### 数据库表结构
+
+**memories 表：**
+```sql
+CREATE TABLE memories (
+  id INTEGER PRIMARY KEY,
+  session_id TEXT,        -- 会话ID
+  role TEXT,              -- user / assistant
+  content TEXT,           -- 消息内容
+  timestamp TEXT,          -- 消息时间
+  created_at TIMESTAMP
+);
+```
+
+**meta 表：**
+```sql
+CREATE TABLE meta (
+  session_id TEXT PRIMARY KEY,
+  last_line_index INTEGER,  -- 上次保存到的行号
+  updated_at TIMESTAMP
+);
+```
+
+---
+
+## 依赖
+
+- Node.js
+- sqlite3（首次使用自动安装）
 
 ---
 
@@ -161,5 +170,3 @@ persistent-memory-claw/
 MIT License
 
 欢迎提交 Issue 和 Pull Request！
-
-如有问题，请提交 Issue。
