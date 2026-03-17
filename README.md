@@ -39,8 +39,6 @@ git clone https://github.com/2730554131/persistent-memory-claw.git
 # 进入目录
 cd persistent-memory-claw
 
-# 无需手动安装依赖！首次使用时会自动安装
-
 # 移动到你的 OpenClaw workspace skills 目录
 mv persistent-memory-claw /path/to/your-workspace/skills/
 
@@ -104,15 +102,11 @@ persistent-memory-claw/
 ├── README.md               # 文档
 ├── SKILL.md                # OpenClaw Skill 定义
 ├── package.json            # 依赖配置
-├── actions/
-│   ├── save.js           # 手动保存记忆
-│   ├── list.js           # 列出记忆
-│   ├── search.js         # 搜索记忆
-│   └── summarize.js      # 手动生成摘要
-└── hooks/
-    └── auto-save/
-        ├── HOOK.md       # Hook 定义
-        └── handler.ts    # 占位（已简化）
+└── actions/
+    ├── save.js           # 手动保存记忆
+    ├── list.js           # 列出记忆
+    ├── search.js         # 搜索记忆
+    └── summarize.js      # 手动生成摘要
 ```
 
 ---
