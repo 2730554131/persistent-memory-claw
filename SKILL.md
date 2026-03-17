@@ -59,8 +59,7 @@ node actions/list.js --date 2026-03-17
 const { summarize } = require('./actions/summarize');
 await summarize({ 
   workspace: '{workspace}', 
-  date: '2026-03-17',
-  gatewayUrl: 'http://localhost:8080'
+  date: '2026-03-17'
 });
 ```
 
@@ -68,13 +67,6 @@ CLI 用法：
 ```bash
 node actions/summarize.js
 node actions/summarize.js --date 2026-03-17
-```
-
-**前提条件：** 启用 Gateway 的 chatCompletions：
-```json
-{
-  "gateway": { "http": { "endpoints": { "chatCompletions": { "enabled": true } } } }
-}
 ```
 
 ## 存储结构

@@ -1,55 +1,10 @@
 /**
  * Persistent Memory - Summarize Action
- * LLM 驱动的自动摘要生成
- * 
- * 功能：
- * - 使用 OpenClaw LLM 生成会话摘要
- * - 自动提取关键信息（任务、承诺、决定）
- * - 生成行动项
- * 
- * 触发关键词：摘要、总结、提炼
+ * 使用 subagent 调用 LLM 生成摘要
  */
 
-const http = require('http');
-const https = require('https');
-
-/**
- * 调用 OpenClaw LLM 生成摘要
- */
-async function callLLM(options, prompt) {
-  return new Promise((resolve, reject) => {
-    const data = JSON.stringify({
-      model: options.model || 'openclaw:main',
-      messages: [
-        { role: 'system', content: '你是一个专业的会议记录助手，负责生成简洁准确的摘要。' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.3,
-      max_tokens: 2000
-    });
-
-    const req = http.request(options, (res) => {
-      let body = '';
-      res.on('data', chunk => body += chunk);
-      res.on('end', () => {
-        try {
-          const response = JSON.parse(body);
-          if (response.choices && response.choices[0]) {
-            resolve(response.choices[0].message.content);
-          } else {
-            reject(new Error('LLM response error: ' + body));
-          }
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
-
-    req.on('error', reject);
-    req.write(data);
-    req.end();
-  });
-}
+const fs = require('fs');
+const path = require('path');
 
 /**
  * 解析命令行参数
@@ -59,10 +14,7 @@ function parseArgs() {
   const result = {
     workspace: process.env.OPENCLAW_WORKSPACE || process.cwd(),
     date: null,
-    sessionId: null,
-    gatewayUrl: 'http://localhost:8080',
-    token: process.env.OPENCLAW_GATEWAY_TOKEN || 'openclaw',
-    model: 'openclaw:main'
+    sessionId: null
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -72,18 +24,6 @@ function parseArgs() {
     } else if (args[i] === '--date' && args[i + 1]) {
       result.date = args[i + 1];
       i++;
-    } else if (args[i] === '--session-id' && args[i + 1]) {
-      result.sessionId = args[i + 1];
-      i++;
-    } else if (args[i] === '--gateway-url' && args[i + 1]) {
-      result.gatewayUrl = args[i + 1];
-      i++;
-    } else if (args[i] === '--token' && args[i + 1]) {
-      result.token = args[i + 1];
-      i++;
-    } else if (args[i] === '--model' && args[i + 1]) {
-      result.model = args[i + 1];
-      i++;
     }
   }
 
@@ -91,13 +31,77 @@ function parseArgs() {
 }
 
 /**
+ * 使用 subagent 生成摘要
+ */
+async function generateSummary(conversationText) {
+  return new Promise((resolve, reject) => {
+    // 使用 spawn 来调用 subagent
+    const { spawn } = require('child_process');
+    
+    const prompt = `请分析以下对话，生成一个简洁的摘要（100字以内），包含：
+1. 对话主题
+2. 关键信息
+
+对话内容：
+${conversationText}`;
+
+    // 通过 openclaw CLI 调用 subagent
+    const proc = spawn('npx', [
+      'openclaw',
+      'agent',
+      '--prompt', prompt,
+      '--model', 'minimax-portal/MiniMax-M2.5'
+    ], {
+      cwd: process.cwd(),
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    proc.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+
+    proc.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout.trim());
+      } else {
+        // 如果CLI不可用，返回简化的本地摘要
+        resolve(generateLocalSummary(conversationText));
+      }
+    });
+  });
+}
+
+/**
+ * 本地简单摘要（备用方案）
+ */
+function generateLocalSummary(conversationText) {
+  const lines = conversationText.split('\n').filter(l => l.trim());
+  
+  // 提取用户和AI的最后几轮对话
+  const recent = lines.slice(-6);
+  
+  let summary = '对话摘要：\n';
+  for (const line of recent) {
+    if (line.startsWith('用户:') || line.startsWith('user:')) {
+      summary += '用户: ' + line.replace(/^(用户:|user:)/, '').substring(0, 50) + '...\n';
+    }
+  }
+  
+  return summary;
+}
+
+/**
  * 主函数
  */
 async function main() {
   const options = parseArgs();
-  const fs = require('fs');
-  const path = require('path');
-
   const memoryDir = path.join(options.workspace, 'memory');
   
   if (!fs.existsSync(memoryDir)) {
@@ -156,7 +160,7 @@ async function main() {
   }
 
   // 限制消息数量（取最近的）
-  const recentMessages = allMessages.slice(-100);
+  const recentMessages = allMessages.slice(-50);
   
   // 构建对话文本
   let conversationText = '';
@@ -166,74 +170,33 @@ async function main() {
   }
 
   try {
-    // 调用 LLM 生成摘要
-    const summaryPrompt = `请分析以下对话，生成一个简洁的摘要，包含：
-1. 对话主题
-2. 关键信息（任务、承诺、决定）
-3. 重要行动项
-4. 待完成的事项
-
-对话内容：
-${conversationText}`;
-
-    const url = new URL('/v1/chat/completions', options.gatewayUrl);
-    const llmOptions = {
-      hostname: url.hostname,
-      port: url.port || 80,
-      path: url.pathname,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${options.token}`
-      }
-    };
-
-    const summary = await callLLM(llmOptions, summaryPrompt);
-
-    // 提取关键信息
-    const keyInfoPrompt = `从以下对话摘要中提取关键信息，以JSON格式返回：
-{
-  "tasks": ["任务列表"],
-  "promises": ["承诺列表"],
-  "decisions": ["决定列表"],
-  "topics": ["主题列表"]
-}
-
-摘要：
-${summary}`;
-
-    const keyInfo = await callLLM(llmOptions, keyInfoPrompt);
-
-    // 解析 JSON
-    let parsedKeyInfo = {};
+    // 使用 subagent 生成摘要
+    let summary;
     try {
-      const jsonMatch = keyInfo.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsedKeyInfo = JSON.parse(jsonMatch[0]);
-      }
-    } catch {}
+      summary = await generateSummary(conversationText);
+    } catch (e) {
+      // 如果 subagent 不可用，使用本地摘要
+      summary = generateLocalSummary(conversationText);
+    }
 
     // 保存摘要到数据库
     const dbPath = path.join(memoryDir, `${options.date || new Date().toISOString().split('T')[0]}.db`);
     const db = new sqlite3.Database(dbPath);
 
-    // 创建摘要表
     await new Promise((resolve) => {
       db.run(`
         CREATE TABLE IF NOT EXISTS summaries (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           content TEXT,
-          key_info TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `, resolve);
     });
 
-    // 保存摘要
     await new Promise((resolve, reject) => {
       db.run(
-        'INSERT INTO summaries (content, key_info) VALUES (?, ?)',
-        [summary, JSON.stringify(parsedKeyInfo)],
+        'INSERT INTO summaries (content) VALUES (?)',
+        [summary],
         function(err) {
           if (err) reject(err);
           else resolve(this.lastID);
@@ -246,7 +209,6 @@ ${summary}`;
     console.log(JSON.stringify({
       success: true,
       summary,
-      keyInfo: parsedKeyInfo,
       messageCount: recentMessages.length,
       message: '摘要生成成功'
     }));
@@ -254,8 +216,7 @@ ${summary}`;
   } catch (error) {
     console.log(JSON.stringify({
       success: false,
-      error: error.message,
-      message: 'LLM 调用失败，请确保 Gateway 的 chatCompletions 已启用'
+      error: error.message
     }));
   }
 }
