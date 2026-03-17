@@ -20,8 +20,8 @@
 
 | 功能 | 说明 |
 |------|------|
-| 自动保存会话 | OpenClaw 自动压缩前保存所有对话到 SQLite |
-| LLM 摘要生成 | 使用 OpenClaw LLM 生成会话摘要 |
+| 自动保存会话 | OpenClaw 自动压缩前保存对话到 SQLite |
+| 自动摘要生成 | 每次保存时自动生成 LLM 摘要 |
 | 搜索记忆 | 关键词搜索历史对话 |
 | 列出记忆 | 按日期查看历史对话 |
 
@@ -125,7 +125,12 @@ node actions/list.js --workspace /path/to/workspace
 
 # 查看指定日期的记忆
 node actions/list.js --workspace /path/to/workspace --date 2026-03-17
+
+# 查看历史摘要
+node actions/list.js --workspace /path/to/workspace --date 2026-03-17 --type summaries
 ```
+
+**注意**：摘要会在每次自动保存时自动生成，无需手动触发。
 
 ### LLM 摘要生成
 

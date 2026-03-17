@@ -16,6 +16,7 @@ metadata: {"openclaw": {"emoji": "🧠", "requires": {"bins": ["node"]}}}
 - 存储路径：`{workspace}/memory/{YYYY-MM-DD}.db`
 - 增量保存：多次压缩只保存新增消息
 - 元数据记录：记录每个 session 保存位置，避免重复
+- **自动摘要**：保存时自动生成 LLM 摘要
 
 ### 2. 搜索记忆
 当用户说"搜索 XXX"、"查找 XXX"时：
@@ -52,22 +53,7 @@ node actions/list.js
 node actions/list.js --date 2026-03-17
 ```
 
-### 4. LLM 摘要生成
-当用户说"生成摘要"、"总结"时：
-
-```javascript
-const { summarize } = require('./actions/summarize');
-await summarize({ 
-  workspace: '{workspace}', 
-  date: '2026-03-17'
-});
-```
-
-CLI 用法：
-```bash
-node actions/summarize.js
-node actions/summarize.js --date 2026-03-17
-```
+**注意**：摘要会在每次自动保存时自动生成，可在 list 中查看。
 
 ## 存储结构
 
@@ -110,7 +96,6 @@ CREATE TABLE meta (
 |------|-----------|
 | 搜索记忆 | 搜索、查找、找一下、记得 |
 | 查看记忆 | 查看记忆、列出记忆、今天的记忆 |
-| LLM 摘要 | 摘要、总结、提炼 |
 | 按日期查询 | 2026年3月17日、昨天、上周 |
 
 ## 自动保存 Hook
