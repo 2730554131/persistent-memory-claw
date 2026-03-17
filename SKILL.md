@@ -18,24 +18,52 @@ metadata: {"openclaw": {"emoji": "🧠", "requires": {"bins": ["node"]}}}
 - 元数据记录：记录每个 session 保存位置，避免重复
 
 ### 2. 搜索记忆
-当用户说"搜索 XXX"、"查找 XXX"时：
+当用户说"搜索 XXX"、"查找 XXX"、"N-gram 搜索"、"混合搜索"、"热词"时：
 
 ```javascript
 const { search } = require('./actions/search');
+
+// 关键词搜索
 await search({
   workspace: '{workspace}',
   query: '关键词',
-  date: '2026-03-17'  // 可选，指定日期
+  searchType: 'keyword'  // keyword, ngram, hybrid, hotwords
+});
+
+// 语义搜索
+await search({
+  workspace: '{workspace}',
+  query: '电脑',
+  searchType: 'ngram'
+});
+
+// 混合搜索
+await search({
+  workspace: '{workspace}',
+  query: '密码',
+  searchType: 'hybrid'
+});
+
+// 热词统计
+await search({
+  workspace: '{workspace}',
+  searchType: 'hotwords'
 });
 ```
 
 CLI 用法：
 ```bash
-# 搜索所有记忆
+# 关键词搜索
 node actions/search.js --workspace /path/to/workspace --query "关键词"
 
-# 搜索指定日期
-node actions/search.js --workspace /path/to/workspace --query "关键词" --date 2026-03-17
+# N-gram 语义搜索
+node actions/search.js --workspace /path/to/workspace --query "电脑" --search-type ngram
+
+# 混合搜索
+node actions/search.js --workspace /path/to/workspace --query "密码" --search-type hybrid
+
+# 热词统计
+node actions/search.js --workspace /path/to/workspace --search-type hotwords
 ```
 
 ### 3. 列出记忆
@@ -93,11 +121,26 @@ CREATE TABLE meta (
 );
 ```
 
+### hotwords 表（热词统计）
+```sql
+CREATE TABLE hotwords (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  word TEXT NOT NULL,
+  count INTEGER DEFAULT 1,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_word ON hotwords(word);
+```
+
 ## 意图识别
 
 | 功能 | 触发关键词 |
 |------|-----------|
 | 搜索记忆 | 搜索、查找、找一下、记得 |
+| N-gram搜索 | N-gram、语义搜索、相似 |
+| 混合搜索 | 混合搜索、综合搜索 |
+| 热词统计 | 热词、热门词、高频词 |
 | 查看记忆 | 查看记忆、列出记忆、今天的记忆 |
 | 按日期查询 | 2026年3月17日、昨天、上周 |
 

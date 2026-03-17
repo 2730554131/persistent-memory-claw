@@ -21,7 +21,10 @@
 | 功能 | 说明 |
 |------|------|
 | 自动保存会话 | OpenClaw 自动压缩前保存所有对话到 SQLite |
-| 搜索记忆 | 关键词搜索历史对话 |
+| 关键词搜索 | 精确匹配关键词 |
+| 语义(N-gram)搜索 | 基于 N-gram 的语义相似度搜索 |
+| 混合搜索 | 关键词 + N-gram 组合搜索 |
+| 热词统计 | 统计高频词汇，按日期存储 |
 | 列出记忆 | 按日期查看历史对话 |
 
 ---
@@ -66,14 +69,38 @@ openclaw hooks enable persistent-memory-auto-save
 
 ## 使用方法
 
-### 搜索记忆
+### 关键词搜索
 
 ```bash
 # 搜索所有记忆
 node actions/search.js --workspace /path/to/workspace --query "关键词"
 
-# 搜索指定日期的记忆
+# 搜索指定日期
 node actions/search.js --workspace /path/to/workspace --query "关键词" --date 2026-03-17
+```
+
+### N-gram 语义搜索
+
+```bash
+# 语义搜索
+node actions/search.js --workspace /path/to/workspace --query "电脑" --search-type ngram
+```
+
+### 混合搜索
+
+```bash
+# 混合搜索（关键词 + N-gram）
+node actions/search.js --workspace /path/to/workspace --query "密码" --search-type hybrid
+```
+
+### 热词统计
+
+```bash
+# 统计热词
+node actions/search.js --workspace /path/to/workspace --search-type hotwords
+
+# 统计指定日期热词
+node actions/search.js --workspace /path/to/workspace --search-type hotwords --date 2026-03-17
 ```
 
 ### 查看记忆
