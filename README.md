@@ -57,11 +57,50 @@ openclaw gateway restart
 
 ---
 
-## 启用自动保存
+## 快速开始
 
 ```bash
-# 启用 Hook
+# 克隆仓库
+git clone https://github.com/2730554131/persistent-memory-claw.git
+
+# 进入目录
+cd persistent-memory-claw
+
+# 无需手动安装依赖！首次使用时会自动安装
+
+# 移动到你的 OpenClaw workspace skills 目录
+mv persistent-memory-claw /path/to/your-workspace/skills/
+
+# 重启 gateway
+openclaw gateway restart
+```
+
+---
+
+## 启用自动保存 Hook
+
+**首次使用需要运行以下命令启用自动保存功能：**
+
+```bash
 openclaw hooks enable persistent-memory-auto-save
+```
+
+**说明**：
+- 启用后，当 OpenClaw 会话即将进行压缩时，会自动保存会话内容到 SQLite 数据库
+- 这是**一次性操作**，启用后会一直生效
+
+### 检查 Hook 状态
+
+```bash
+# 查看 Hook 列表
+openclaw hooks list
+```
+
+### 禁用自动保存
+
+```bash
+# 禁用自动保存 Hook
+openclaw hooks disable persistent-memory-auto-save
 ```
 
 ---

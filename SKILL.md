@@ -115,9 +115,14 @@ CREATE TABLE meta (
 
 ## 自动保存 Hook
 
-### 启用
+### 首次启用（一次性操作）
 ```bash
 openclaw hooks enable persistent-memory-auto-save
+```
+
+### 检查状态
+```bash
+openclaw hooks list
 ```
 
 ### 禁用
