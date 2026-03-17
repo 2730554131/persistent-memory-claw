@@ -21,6 +21,7 @@
 | 功能 | 说明 |
 |------|------|
 | 自动保存会话 | OpenClaw 自动压缩前保存所有对话到 SQLite |
+| 搜索记忆 | 关键词搜索历史对话 |
 | 列出记忆 | 按日期查看历史对话 |
 
 ---
@@ -64,6 +65,16 @@ openclaw hooks enable persistent-memory-auto-save
 ---
 
 ## 使用方法
+
+### 搜索记忆
+
+```bash
+# 搜索所有记忆
+node actions/search.js --workspace /path/to/workspace --query "关键词"
+
+# 搜索指定日期的记忆
+node actions/search.js --workspace /path/to/workspace --query "关键词" --date 2026-03-17
+```
 
 ### 查看记忆
 
@@ -115,7 +126,8 @@ persistent-memory-claw/
 ├── SKILL.md                # OpenClaw Skill 定义
 ├── package.json            # 依赖配置
 ├── actions/
-│   └── list.js           # 列出记忆
+│   ├── list.js           # 列出记忆
+│   └── search.js         # 搜索记忆
 └── hooks/
     └── auto-save/
         ├── HOOK.md       # Hook 定义

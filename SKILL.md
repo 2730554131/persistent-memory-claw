@@ -17,7 +17,28 @@ metadata: {"openclaw": {"emoji": "🧠", "requires": {"bins": ["node"]}}}
 - 增量保存：多次压缩只保存新增消息
 - 元数据记录：记录每个 session 保存位置，避免重复
 
-### 2. 列出记忆
+### 2. 搜索记忆
+当用户说"搜索 XXX"、"查找 XXX"时：
+
+```javascript
+const { search } = require('./actions/search');
+await search({
+  workspace: '{workspace}',
+  query: '关键词',
+  date: '2026-03-17'  // 可选，指定日期
+});
+```
+
+CLI 用法：
+```bash
+# 搜索所有记忆
+node actions/search.js --workspace /path/to/workspace --query "关键词"
+
+# 搜索指定日期
+node actions/search.js --workspace /path/to/workspace --query "关键词" --date 2026-03-17
+```
+
+### 3. 列出记忆
 当用户说"查看记忆"、"列出记忆"时：
 
 ```javascript
@@ -76,7 +97,8 @@ CREATE TABLE meta (
 
 | 功能 | 触发关键词 |
 |------|-----------|
-| 查看记忆 | 查看记忆、列出记忆、今天的记忆、昨天的记忆 |
+| 搜索记忆 | 搜索、查找、找一下、记得 |
+| 查看记忆 | 查看记忆、列出记忆、今天的记忆 |
 | 按日期查询 | 2026年3月17日、昨天、上周 |
 
 ## 自动保存 Hook
