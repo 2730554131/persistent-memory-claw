@@ -22,12 +22,8 @@
 |------|------|
 | 自动保存会话 | OpenClaw 自动压缩前保存所有对话到 SQLite |
 | LLM 摘要生成 | 使用 OpenClaw LLM 生成会话摘要 |
-| 关键词搜索 | 精确匹配关键词 |
-| 语义(N-gram)搜索 | 基于 N-gram 的语义相似度搜索 |
-| 混合搜索 | 关键词 + N-gram 组合搜索 |
-| 热词统计 | 统计高频词汇，按日期存储 |
+| 搜索记忆 | 关键词搜索历史对话 |
 | 列出记忆 | 按日期查看历史对话 |
-| 知识管理 | 重要事件标记、经验提取、知识积累、从失败中学习 |
 
 ---
 
@@ -37,6 +33,7 @@
 - **Hook 机制** - 监听 OpenClaw 压缩事件自动保存
 - **按日期存储** - 每天的对话单独存储
 - **增量保存** - 多次压缩只保存新增消息，不重复
+- **LLM 摘要** - 使用 OpenClaw LLM 生成智能摘要
 
 ---
 
@@ -71,6 +68,26 @@ openclaw hooks enable persistent-memory-auto-save
 
 ## 使用方法
 
+### 搜索记忆
+
+```bash
+# 搜索所有记忆
+node actions/search.js --workspace /path/to/workspace --query "关键词"
+
+# 搜索指定日期的记忆
+node actions/search.js --workspace /path/to/workspace --query "关键词" --date 2026-03-17
+```
+
+### 查看记忆
+
+```bash
+# 列出今天的所有对话
+node actions/list.js --workspace /path/to/workspace
+
+# 查看指定日期的记忆
+node actions/list.js --workspace /path/to/workspace --date 2026-03-17
+```
+
 ### LLM 摘要生成
 
 ```bash
@@ -79,9 +96,6 @@ node actions/summarize.js --workspace /path/to/workspace
 
 # 生成指定日期的摘要
 node actions/summarize.js --workspace /path/to/workspace --date 2026-03-17
-
-# 指定 Gateway
-node actions/summarize.js --workspace /path/to/workspace --gateway-url http://localhost:8080 --token your-token
 ```
 
 **前提条件：**
@@ -96,78 +110,6 @@ node actions/summarize.js --workspace /path/to/workspace --gateway-url http://lo
     }
   }
 }
-```
-
-### 关键词搜索
-
-```bash
-# 搜索所有记忆
-node actions/search.js --workspace /path/to/workspace --query "关键词"
-
-# 搜索指定日期
-node actions/search.js --workspace /path/to/workspace --query "关键词" --date 2026-03-17
-```
-
-### N-gram 语义搜索
-
-```bash
-# 语义搜索
-node actions/search.js --workspace /path/to/workspace --query "电脑" --search-type ngram
-```
-
-### 混合搜索
-
-```bash
-# 混合搜索（关键词 + N-gram）
-node actions/search.js --workspace /path/to/workspace --query "密码" --search-type hybrid
-```
-
-### 热词统计
-
-```bash
-# 统计热词
-node actions/search.js --workspace /path/to/workspace --search-type hotwords
-
-# 统计指定日期热词
-node actions/search.js --workspace /path/to/workspace --search-type hotwords --date 2026-03-17
-```
-
-### 知识管理
-
-```bash
-# 标记重要事件（1-10星）
-node actions/knowledge.js --workspace /path/to/workspace --action mark_important --content "重要内容" --importance 8
-
-# 获取重要事件（新会话优先加载）
-node actions/knowledge.js --workspace /path/to/workspace --action get_important
-
-# 提取经验
-node actions/knowledge.js --workspace /path/to/workspace --action extract_experience --content "学到的经验" --type success
-
-# 获取经验
-node actions/knowledge.js --workspace /path/to/workspace --action get_experiences
-
-# 积累知识
-node actions/knowledge.js --workspace /path/to/workspace --action add_knowledge --content "知识内容"
-
-# 获取知识（新会话优先加载）
-node actions/knowledge.js --workspace /path/to/workspace --action get_knowledge
-
-# 从失败中学习
-node actions/knowledge.js --workspace /path/to/workspace --action learn_from_failure --content "失败教训"
-
-# 获取学习记录
-node actions/knowledge.js --workspace /path/to/workspace --action get_learning
-```
-
-### 查看记忆
-
-```bash
-# 列出今天的所有对话
-node actions/list.js --workspace /path/to/workspace
-
-# 查看指定日期的记忆
-node actions/list.js --workspace /path/to/workspace --date 2026-03-17
 ```
 
 ---
@@ -194,12 +136,6 @@ OpenClaw 执行压缩
 用户继续新会话（对话已保存）
 ```
 
-**增量保存说明：**
-
-- 同一个会话多次压缩时，只保存新增的对话
-- meta 表记录每个 session 保存到的行号
-- 避免重复存储
-
 ---
 
 ## 项目结构
@@ -212,7 +148,6 @@ persistent-memory-claw/
 ├── actions/
 │   ├── list.js           # 列出记忆
 │   ├── search.js         # 搜索记忆
-│   ├── knowledge.js      # 知识管理
 │   └── summarize.js      # LLM 摘要生成
 └── hooks/
     └── auto-save/
@@ -240,7 +175,7 @@ CREATE TABLE memories (
   session_id TEXT,        -- 会话ID
   role TEXT,              -- user / assistant
   content TEXT,           -- 消息内容
-  timestamp TEXT,          -- 消息时间
+  timestamp TEXT,         -- 消息时间
   created_at TIMESTAMP
 );
 ```

@@ -14,32 +14,11 @@ interface HookEvent {
   };
 }
 
-// 提取中英文字符
-function extractTokens(text: string): string[] {
-  return text.toLowerCase()
-    .replace(/[^\w\u4e00-\u9fa5]/g, ' ')
-    .split(/\s+/)
-    .filter((t: string) => t.length > 1);
-}
-
-// 计算词频
-function wordFrequency(texts: string[]): Record<string, number> {
-  const freq: Record<string, number> = {};
-  for (const text of texts) {
-    const tokens = extractTokens(text);
-    for (const token of tokens) {
-      freq[token] = (freq[token] || 0) + 1;
-    }
-  }
-  return freq;
-}
-
 /**
  * 自动保存 Hook
  * 在会话压缩前保存所有对话到 SQLite
  * 存储路径：memory/YYYY-MM-DD.db
  * 支持会话多次压缩，每次只保存新增消息
- * 同时更新热词统计表
  */
 const handler = async (event: HookEvent): Promise<void> => {
   // 只处理 session:compact:before 事件
@@ -104,18 +83,6 @@ const handler = async (event: HookEvent): Promise<void> => {
           )
         `);
         
-        // 热词统计表（按日期）
-        db.run(`
-          CREATE TABLE IF NOT EXISTS hotwords (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            word TEXT NOT NULL,
-            count INTEGER DEFAULT 1,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-          )
-        `);
-        
-        db.run(`CREATE INDEX IF NOT EXISTS idx_word ON hotwords(word)`);
-        
         resolve();
       });
     });
@@ -135,7 +102,6 @@ const handler = async (event: HookEvent): Promise<void> => {
 
     // 7. 从上次结束的位置继续解析新消息
     const newMessages: Array<{role: string, content: string, timestamp: string}> = [];
-    const allContents: string[] = [];
     
     for (let i = lastLineIndex; i < lines.length; i++) {
       const line = lines[i];
@@ -164,7 +130,6 @@ const handler = async (event: HookEvent): Promise<void> => {
               content: textContent,
               timestamp: msgTime
             });
-            allContents.push(textContent);
           }
         }
       } catch {}
@@ -195,29 +160,6 @@ const handler = async (event: HookEvent): Promise<void> => {
           'INSERT OR REPLACE INTO meta (session_id, last_line_index, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
           [sessionId, lines.length]
         );
-
-        // 10. 更新热词统计
-        if (allContents.length > 0) {
-          const newFreq = wordFrequency(allContents);
-          
-          for (const [word, count] of Object.entries(newFreq)) {
-            // 检查词是否存在
-            const existing = await new Promise<number>((res) => {
-              db.get('SELECT count FROM hotwords WHERE word = ?', [word], (err, row: any) => {
-                res(row ? row.count : 0);
-              });
-            });
-            
-            if (existing > 0) {
-              // 更新计数
-              db.run('UPDATE hotwords SET count = count + ?, updated_at = CURRENT_TIMESTAMP WHERE word = ?', 
-                [count, word]);
-            } else {
-              // 新增
-              db.run('INSERT INTO hotwords (word, count) VALUES (?, ?)', [word, count]);
-            }
-          }
-        }
 
         console.log(`[persistent-memory-auto-save] 已保存 ${newMessages.length} 条消息`);
         resolve();
